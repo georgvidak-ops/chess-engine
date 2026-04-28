@@ -21,7 +21,8 @@ class Board:
 
         if board[r1][f1] == "p" or board[r1][f1] == "P": # Pawn Check
             return self.pawnValidity(r1, f1, r2, f2, color)
-
+        if board[r1][f1] == "n" or board[r1][f1] == "N":
+            return self.KnightValidity(r1, f1, r2, f2, color)
 
     def pawnValidity(self, r1, f1, r2, f2, clr):
         board = self.board
@@ -43,8 +44,16 @@ class Board:
                 return True
         #no en passant yet
         return False
+        
+    def KnightValidity(self, r1, f1, r2, f2, clr):
+            board = self.board
+            target = board[r2][f2]
 
-
+            if target == "." or target.isupper() != clr: #checks if target square is not occupied by ally piece
+                if (abs(f2 - f1) + abs(r2 - r1)) == 3 and f1 != f2 and r1 != r2:
+                    return True
+            return False
+    
     def makeMove(self, r1, f1, r2, f2):
         board = self.board
 
