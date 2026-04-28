@@ -2,10 +2,7 @@ class Board:
     def __init__(self):
         self.board = self.create_starting_board()
 
-
-    def checkValidity(self, r1, f1, r2, f2):
-        board = self.board
-
+    def conversion(self, r1, f1, r2, f2):
         # file conversion: a-h → 0-7
         f1 = ord(f1) - ord('a')
         f2 = ord(f2) - ord('a')
@@ -14,7 +11,16 @@ class Board:
         r1 = 8 - int(r1)
         r2 = 8 - int(r2)
 
+        return r1, f1, r2, f2
+
+    def checkValidity(self, r1, f1, r2, f2, turn):
+        board = self.board
+
+        r1, f1, r2, f2 = self.conversion(r1, f1, r2, f2)
+
         color = (board[r1][f1]).isupper() # white = true, black = false
+
+        if turn != color: return False #Check if the move was made by the person whose turn it is
 
         if not (all(0 <= x <= 7 for x in (r1, f1, r2, f2))):
             return False
@@ -57,13 +63,7 @@ class Board:
     def makeMove(self, r1, f1, r2, f2):
         board = self.board
 
-        # file conversion: a-h → 0-7
-        f1 = ord(f1) - ord('a')
-        f2 = ord(f2) - ord('a')
-
-        # rank conversion: '1'-'8' → 7-0
-        r1 = 8 - int(r1)
-        r2 = 8 - int(r2)
+        r1, f1, r2, f2 = self.conversion(r1, f1, r2, f2)
 
         board[r2][f2] = board[r1][f1]
         board[r1][f1] = "."
