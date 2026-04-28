@@ -1,87 +1,226 @@
 class Board:
     def __init__(self):
-        self.board = self.create_starting_board()
+        self.init_bitboards()
+        self.white_to_move = True
 
-    def conversion(self, r1, f1, r2, f2):
-        # file conversion: a-h → 0-7
-        f1 = ord(f1) - ord('a')
-        f2 = ord(f2) - ord('a')
+    # -------------------------
+    # INIT POSITION
+    # -------------------------
 
-        # rank conversion: '1'-'8' → 7-0
-        r1 = 8 - int(r1)
-        r2 = 8 - int(r2)
+    def init_bitboards(self):
+        # pawns
+        self.wp = 0x00FF000000000000
+        self.bp = 0x000000000000FF00
 
-        return r1, f1, r2, f2
+        # pieces
+        self.br = (1<<0) | (1<<7)
+        self.bn = (1<<1) | (1<<6)
+        self.bb = (1<<2) | (1<<5)
+        self.bq = (1<<3)
+        self.bk = (1<<4)
 
-    def checkValidity(self, r1, f1, r2, f2, turn):
-        board = self.board
+        self.wr = (1<<56) | (1<<63)
+        self.wn = (1<<57) | (1<<62)
+        self.wb = (1<<58) | (1<<61)
+        self.wq = (1<<59)
+        self.wk = (1<<60)
 
-        r1, f1, r2, f2 = self.conversion(r1, f1, r2, f2)
+    # -------------------------
+    # BITBOARDS
+    # -------------------------
 
-        color = (board[r1][f1]).isupper() # white = true, black = false
+    @property
+    def white(self):
+        return self.wp | self.wn | self.wb | self.wr | self.wq | self.wk
 
-        if turn != color: return False #Check if the move was made by the person whose turn it is
+    @property
+    def black(self):
+        return self.bp | self.bn | self.bb | self.br | self.bq | self.bk
 
-        if not (all(0 <= x <= 7 for x in (r1, f1, r2, f2))):
+    @property
+    def occupied(self):
+        return self.white | self.black
+
+    # -------------------------
+    # SQUARE HELPERS
+    # -------------------------
+
+    def get_piece(self, sq):
+        bit = 1 << sq
+
+        pieces = {
+            "P": self.wp, "N": self.wn, "B": self.wb,
+            "R": self.wr, "Q": self.wq, "K": self.wk,
+            "p": self.bp, "n": self.bn, "b": self.bb,
+            "r": self.br, "q": self.bq, "k": self.bk,
+        }
+
+        for p, bb in pieces.items():
+            if bb & bit:
+                return p
+        return "."
+
+    # -------------------------
+    # MOVE CONVERSION
+    # -------------------------
+
+    def parse(self, move):
+        f_file, f_rank, t_file, t_rank = move
+
+        from_sq = (8 - int(f_rank)) * 8 + (ord(f_file) - ord('a'))
+        to_sq   = (8 - int(t_rank)) * 8 + (ord(t_file) - ord('a'))
+
+        return from_sq, to_sq
+
+    # -------------------------
+    # KNIGHT
+    # -------------------------
+
+    def KnightValidity(self, sq_from, sq_to, clr):
+        own = self.white if clr else self.black
+
+        r1, f1 = divmod(sq_from, 8)
+        r2, f2 = divmod(sq_to, 8)
+
+        if (abs(r1 - r2), abs(f1 - f2)) not in [(2,1),(1,2)]:
             return False
 
-        if board[r1][f1] == "p" or board[r1][f1] == "P": # Pawn Check
-            return self.pawnValidity(r1, f1, r2, f2, color)
-        if board[r1][f1] == "n" or board[r1][f1] == "N":
-            return self.KnightValidity(r1, f1, r2, f2, color)
+        return not ((1 << sq_to) & own)
 
-    def pawnValidity(self, r1, f1, r2, f2, clr):
-        board = self.board
-        step = 1
+    # -------------------------
+    # BISHOP
+    # -------------------------
 
-        if (clr and r1 == 6) or (not clr and r1 == 1): #check if pawn has moved to see if we can move it 2 squares or not
-            step = 2
+    def bishop_moves(self, sq, own, enemy):
+        moves = 0
 
-        target = board[r2][f2]
+        for d in [9, 7, -7, -9]:
+            s = sq
 
-        if (f1 == f2) and target == "." and abs(r2 - r1) <= step: #check if move is valid in terms of the piece being a pawn
-            if abs(r2 - r1) == 2:
-                if (clr and board[r1-1][f1] != ".") or (not clr and board[r1+1][f1] != "."): #check if we jumped over pieces when moving the pawn 2 squares
-                    return False
-            if (clr and (r2 - r1) < 0) or (not clr and (r2 - r1) > 0): #check if move is valid given the color
+            while True:
+                prev = s
+                s += d
+
+                if s < 0 or s > 63:
+                    break
+
+                # file wrap check
+                if abs((s % 8) - (prev % 8)) != 1:
+                    break
+
+                bit = 1 << s
+
+                if bit & own:
+                    break
+
+                moves |= bit
+
+                if bit & enemy:
+                    break
+
+        return moves
+
+    def BishopValidity(self, sq_from, sq_to, clr):
+        own = self.white if clr else self.black
+        enemy = self.black if clr else self.white
+
+        moves = self.bishop_moves(sq_from, own, enemy)
+        return bool(moves & (1 << sq_to))
+
+    # -------------------------
+    # PAWN
+    # -------------------------
+
+    def pawnValidity(self, sq_from, sq_to, clr):
+        occ = self.occupied
+
+        direction = -8 if clr else 8
+        start_rank = 6 if clr else 1
+
+        r1, f1 = divmod(sq_from, 8)
+        r2, f2 = divmod(sq_to, 8)
+
+        target = 1 << sq_to
+
+        # forward move
+        if f1 == f2:
+            if sq_to == sq_from + direction and not (target & occ):
                 return True
-        elif abs(f1 - f2) == 1 and target != "." and target.isupper() != clr and abs(r2 - r1) == 1: #check if move is valid in terms of the piece being a pawn
-            if (clr and (r2 - r1) < 0) or (not clr and (r2 - r1) > 0): #check if move is valid given the colour
-                return True
-        #no en passant yet
-        return False
-        
-    def KnightValidity(self, r1, f1, r2, f2, clr):
-            board = self.board
-            target = board[r2][f2]
 
-            if target == "." or target.isupper() != clr: #checks if target square is not occupied by ally piece
-                if (abs(f2 - f1) + abs(r2 - r1)) == 3 and f1 != f2 and r1 != r2:
+            if r1 == start_rank and sq_to == sq_from + 2 * direction:
+                mid = sq_from + direction
+                if not ((1 << mid) & occ) and not (target & occ):
                     return True
+
+        # capture
+        if abs(f1 - f2) == 1 and sq_to == sq_from + direction:
+            enemy = self.black if clr else self.white
+            if target & enemy:
+                return True
+
+        return False
+
+    # -------------------------
+    # VALIDITY WRAPPER
+    # -------------------------
+
+    def checkValidity_sq(self, sq_from, sq_to):
+        piece = self.get_piece(sq_from)
+        if piece == ".":
             return False
-    
-    def makeMove(self, r1, f1, r2, f2):
-        board = self.board
 
-        r1, f1, r2, f2 = self.conversion(r1, f1, r2, f2)
+        clr = piece.isupper()
+        if clr != self.white_to_move:
+            return False
+        if piece.lower() == "p":
+            return self.pawnValidity(sq_from, sq_to, clr)
+        if piece.lower() == "n":
+            return self.KnightValidity(sq_from, sq_to, clr)
+        if piece.lower() == "b":
+            return self.BishopValidity(sq_from, sq_to, clr)
 
-        board[r2][f2] = board[r1][f1]
-        board[r1][f1] = "."
+        return False
 
+    # -------------------------
+    # MAKE MOVE
+    # -------------------------
 
-    def create_starting_board(self):
-        return [
-            ["r","n","b","q","k","b","n","r"],
-            ["p","p","p","p","p","p","p","p"],
-            [".",".",".",".",".",".",".","."],
-            [".",".",".",".",".",".",".","."],
-            [".",".",".",".",".",".",".","."],
-            [".",".",".",".",".",".",".","."],
-            ["P","P","P","P","P","P","P","P"],
-            ["R","N","B","Q","K","B","N","R"],
-        ]
+    def makeMove_sq(self, sq_from, sq_to):
+        piece = self.get_piece(sq_from)
+        if piece == ".":
+            return False
+
+        from_bit = 1 << sq_from
+        to_bit = 1 << sq_to
+
+        # capture removal
+        for attr in ["wp","wn","wb","wr","wq","wk","bp","bn","bb","br","bq","bk"]:
+            if getattr(self, attr) & to_bit:
+                setattr(self, attr, getattr(self, attr) & ~to_bit)
+
+        # move piece
+        mapping = {
+            "P":"wp","N":"wn","B":"wb","R":"wr","Q":"wq","K":"wk",
+            "p":"bp","n":"bn","b":"bb","r":"br","q":"bq","k":"bk"
+        }
+
+        bb = getattr(self, mapping[piece])
+        bb &= ~from_bit
+        bb |= to_bit
+        setattr(self, mapping[piece], bb)
+
+        self.white_to_move = not self.white_to_move
+        return True
+
+    # -------------------------
+    # PRINT BOARD
+    # -------------------------
 
     def print_board(self):
-        for row in self.board:
+        for r in range(8):
+            row = []
+            for f in range(8):
+                sq = r * 8 + f
+                row.append(self.get_piece(sq))
             print(" ".join(row))
         print()

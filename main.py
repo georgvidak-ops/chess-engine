@@ -2,24 +2,26 @@ from board import Board
 
 def main():
     board = Board()
-    turn = True #true = white to play, false = black to play
 
     while True:
         board.print_board()
-        
-        move = input("Enter move (e.g. e2e4) or 'q' to quit: ")
-        
+
+        move = input("Enter move (e.g. e2e4): ")
+
         if move == "q":
             break
-        
-        f_file, f_rank, t_file, t_rank = move
 
-        if board.checkValidity(f_rank, f_file, t_rank, t_file, turn):
-            print("Valid Move")
-            turn = not turn
-            board.makeMove(f_rank, f_file, t_rank, t_file)
+        if len(move) != 4:
+            print("Bad format")
+            continue
+
+        sq_from, sq_to = board.parse(move)
+
+        if board.checkValidity_sq(sq_from, sq_to):
+            board.makeMove_sq(sq_from, sq_to)
+            print("Valid move")
         else:
-            print("Invalid Move")
+            print("Invalid move")
             break
 
 
