@@ -126,6 +126,66 @@ class Board:
 
         moves = self.bishop_moves(sq_from, own, enemy)
         return bool(moves & (1 << sq_to))
+    
+    # -------------------------
+    # ROOK
+    # -------------------------
+    def rook_moves(self, sq, own, enemy):
+        moves = 0
+
+        #veritcal check
+        for d in [8, -8]:
+            s = sq
+
+            while True:
+                prev = s
+                s += d
+
+                if s < 0 or s > 63:
+                    break
+
+                bit = 1 << s
+
+                if bit & own:
+                    break
+
+                moves |= bit
+
+                if bit & enemy:
+                    break
+        
+        #horizontal check (requires file wrapping protection)
+        for d in [1, -1]:
+            s = sq
+
+            while True:
+                prev = s
+                s += d
+
+                if s < 0 or s > 63:
+                    break
+
+                if (s//8) != (prev//8): break
+
+                bit = 1 << s
+
+                if bit & own:
+                    break
+
+                moves |= bit
+
+                if bit & enemy:
+                    break
+
+        return moves
+    
+    def RookValidity(self, sq_from, sq_to, clr):
+        own = self.white if clr else self.black
+        enemy = self.black if clr else self.white
+
+        moves = self.rook_moves(sq_from, own, enemy)
+        return bool(moves & (1 << sq_to))
+
 
     # -------------------------
     # PAWN
@@ -136,6 +196,7 @@ class Board:
 
         direction = -8 if clr else 8
         start_rank = 6 if clr else 1
+        cap_dir = -9 if clr else 9
 
         r1, f1 = divmod(sq_from, 8)
         r2, f2 = divmod(sq_to, 8)
@@ -153,7 +214,7 @@ class Board:
                     return True
 
         # capture
-        if abs(f1 - f2) == 1 and sq_to == sq_from + direction:
+        if abs(f1 - f2) == 1 and sq_to == sq_from + cap_dir:
             enemy = self.black if clr else self.white
             if target & enemy:
                 return True
@@ -178,6 +239,8 @@ class Board:
             return self.KnightValidity(sq_from, sq_to, clr)
         if piece.lower() == "b":
             return self.BishopValidity(sq_from, sq_to, clr)
+        if piece.lower() == "r":
+            return self.RookValidity(sq_from, sq_to, clr)
 
         return False
 
