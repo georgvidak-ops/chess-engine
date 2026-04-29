@@ -185,7 +185,20 @@ class Board:
 
         moves = self.rook_moves(sq_from, own, enemy)
         return bool(moves & (1 << sq_to))
+    
+    # -------------------------
+    # QUEEN
+    # -------------------------
+    
+    def queen_moves(self, sq, own, enemy):
+        return self.rook_moves(sq, own, enemy) + self.bishop_moves(sq, own, enemy)
 
+    def QueenValidity(self, sq_from, sq_to, clr):
+        own = self.white if clr else self.black
+        enemy = self.black if clr else self.white
+
+        moves = self.queen_moves(sq_from, own, enemy)
+        return bool(moves & (1 << sq_to))
 
     # -------------------------
     # PAWN
@@ -241,6 +254,8 @@ class Board:
             return self.BishopValidity(sq_from, sq_to, clr)
         if piece.lower() == "r":
             return self.RookValidity(sq_from, sq_to, clr)
+        if piece.lower() == "q":
+            return self.QueenValidity(sq_from, sq_to, clr)
 
         return False
 
