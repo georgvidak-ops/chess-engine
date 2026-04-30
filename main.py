@@ -5,24 +5,44 @@ def main():
 
     while True:
         board.print_board()
+        board.castling = False
 
-        move = input("Enter move (e.g. e2e4): ")
+        move = input("Enter move (e.g. e2e4) (or enter q to quit the program): ")
 
         if move == "q":
             break
 
         if len(move) != 4:
+            if move == "O-O":
+                if board.CheckCastling(True, board.white_to_move):
+                    sq_from, sq_to = board.parse("e1g1") if board.white_to_move else board.parse("e8g8")
+                    board.makeMove_sq(sq_from, sq_to, True)
+                    sq_from, sq_to = board.parse("h1f1") if board.white_to_move else board.parse("h8f8")
+                    board.makeMove_sq(sq_from, sq_to, False)
+                    continue
+                print("Cant castle short")
+                continue
+            elif move == "O-O-O":
+                if board.CheckCastling(False, board.white_to_move):
+                    sq_from, sq_to = board.parse("e1c1") if board.white_to_move else board.parse("e8c8")
+                    board.makeMove_sq(sq_from, sq_to, True)
+                    sq_from, sq_to = board.parse("a1d1") if board.white_to_move else board.parse("a8d8")
+                    board.makeMove_sq(sq_from, sq_to, False)
+                    continue
+                print("Can castle long")
+                continue
+
             print("Bad format")
             continue
 
         sq_from, sq_to = board.parse(move)
 
         if board.checkValidity_sq(sq_from, sq_to):
-            board.makeMove_sq(sq_from, sq_to)
+            board.makeMove_sq(sq_from, sq_to, False)
             print("Valid move")
         else:
             print("Invalid move")
-            break
+            continue
 
 
 if __name__ == "__main__":
