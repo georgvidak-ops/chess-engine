@@ -251,7 +251,8 @@ class Board:
 
         direction = -8 if clr else 8
         start_rank = 6 if clr else 1
-        cap_dir = -9 if clr else 9
+        cap_dir_one = -9 if clr else 9
+        cap_dir_two = -7 if clr else 7
 
         r1, f1 = divmod(sq_from, 8)
         r2, f2 = divmod(sq_to, 8)
@@ -269,7 +270,7 @@ class Board:
                     return True
 
         # capture
-        if abs(f1 - f2) == 1 and sq_to == sq_from + cap_dir:
+        if abs(f1 - f2) == 1 and (sq_to == sq_from + cap_dir_one) or (sq_to == sq_from + cap_dir_two):
             enemy = self.black if clr else self.white
             if target & enemy:
                 return True
