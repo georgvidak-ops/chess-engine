@@ -40,6 +40,11 @@ def main():
 
         if board.checkValidity_sq(sq_from, sq_to):
             board.makeMove_sq(sq_from, sq_to, False)
+            if board.king_in_check(not board.white_to_move):
+                board.unmakeMove_sq(sq_from, sq_to, False)
+                print("Invalid move, king will be captured")
+                continue
+
             print("Valid move")
         else:
             print("Invalid move")

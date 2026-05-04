@@ -369,7 +369,7 @@ class Board:
         start_rank = 6 if clr else 1
 
         r1, f1 = divmod(sq_from, 8)
-        r2, f2 = divmod(sq_to, 8)
+        f2 = sq_to % 8
 
         target = 1 << sq_to
 
@@ -448,6 +448,32 @@ class Board:
 
         self.white_to_move = not self.white_to_move if not castling else self.white_to_move
         return True
+    
+    def unmakeMove_sq(self, sq_from, sq_to, castling):
+        from_bit = 1 << sq_from
+        to_bit = 1 << sq_to
+        moved_piece = self.get_piece(sq_to)
+        captured_piece = self.get_piece(sq_from)
+
+        mapping = {
+            "P":"wp","N":"wn","B":"wb","R":"wr","Q":"wq","K":"wk",
+            "p":"bp","n":"bn","b":"bb","r":"br","q":"bq","k":"bk"
+        }
+
+        # move piece back
+        bb = getattr(self, mapping[moved_piece])
+        bb &= ~to_bit
+        bb |= from_bit
+        setattr(self, mapping[moved_piece], bb)
+
+        # restore captured piece (if any)
+        if captured_piece != ".":
+            cap_bb = getattr(self, mapping[captured_piece])
+            cap_bb |= to_bit
+            setattr(self, mapping[captured_piece], cap_bb)
+
+        # restore turn
+        self.white_to_move = not self.white_to_move if not castling else self.white_to_move
 
     # -------------------------
     # PRINT BOARD
