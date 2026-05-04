@@ -60,6 +60,17 @@ class Board:
             if bb & bit:
                 return p
         return "."
+    
+    def extract_squares(self, bb):
+        squares = []
+
+        while bb:
+            lsb = bb & -bb
+            sq = lsb.bit_length() - 1
+            squares.append(sq)
+            bb &= bb - 1
+
+        return squares
 
     # -------------------------
     # MOVE CONVERSION
@@ -92,9 +103,9 @@ class Board:
     # BISHOP
     # -------------------------
 
-    def bishop_moves(self, sq, own, enemy):
+    def bishop_moves(self, sq, own, enemy, raycasts):
         moves = 0
-
+        occupied = own | enemy
         for d in [9, 7, -7, -9]:
             s = sq
 
@@ -111,13 +122,16 @@ class Board:
 
                 bit = 1 << s
 
-                if bit & own:
-                    break
-
-                moves |= bit
-
-                if bit & enemy:
-                    break
+                if raycasts:
+                    moves |= bit
+                    if bit & occupied:
+                        break
+                else:
+                    if bit & own:
+                        break
+                    moves |= bit
+                    if bit & enemy:
+                        break
 
         return moves
 
@@ -125,15 +139,15 @@ class Board:
         own = self.white if clr else self.black
         enemy = self.black if clr else self.white
 
-        moves = self.bishop_moves(sq_from, own, enemy)
+        moves = self.bishop_moves(sq_from, own, enemy, False)
         return bool(moves & (1 << sq_to))
     
     # -------------------------
     # ROOK
     # -------------------------
-    def rook_moves(self, sq, own, enemy):
+    def rook_moves(self, sq, own, enemy, raycasts):
         moves = 0
-
+        occupied = own | enemy
         #veritcal check
         for d in [8, -8]:
             s = sq
@@ -147,13 +161,16 @@ class Board:
 
                 bit = 1 << s
 
-                if bit & own:
-                    break
-
-                moves |= bit
-
-                if bit & enemy:
-                    break
+                if raycasts:
+                    moves |= bit
+                    if bit & occupied:
+                        break
+                else:
+                    if bit & own:
+                        break
+                    moves |= bit
+                    if bit & enemy:
+                        break
         
         #horizontal check (requires file wrapping protection)
         for d in [1, -1]:
@@ -170,13 +187,16 @@ class Board:
 
                 bit = 1 << s
 
-                if bit & own:
-                    break
-
-                moves |= bit
-
-                if bit & enemy:
-                    break
+                if raycasts:
+                    moves |= bit
+                    if bit & occupied:
+                        break
+                else:
+                    if bit & own:
+                        break
+                    moves |= bit
+                    if bit & enemy:
+                        break
 
         return moves
     
@@ -184,7 +204,7 @@ class Board:
         own = self.white if clr else self.black
         enemy = self.black if clr else self.white
 
-        moves = self.rook_moves(sq_from, own, enemy)
+        moves = self.rook_moves(sq_from, own, enemy, False)
 
         if not bool(moves & (1 << sq_to)): return False #no need to check for castling rights if move is invalid
         if clr and (self.castling_rights & 0b1000) and sq_from & (1 << 63): #check if white's a1 rook moved and removed castling rights
@@ -202,14 +222,14 @@ class Board:
     # QUEEN
     # -------------------------
     
-    def queen_moves(self, sq, own, enemy):
-        return self.rook_moves(sq, own, enemy) + self.bishop_moves(sq, own, enemy)
+    def queen_moves(self, sq, own, enemy, raycasts):
+        return self.rook_moves(sq, own, enemy, raycasts) | self.bishop_moves(sq, own, enemy, raycasts)
 
     def QueenValidity(self, sq_from, sq_to, clr):
         own = self.white if clr else self.black
         enemy = self.black if clr else self.white
 
-        moves = self.queen_moves(sq_from, own, enemy)
+        moves = self.queen_moves(sq_from, own, enemy, False)
         return bool(moves & (1 << sq_to))
     
     # -------------------------
@@ -241,6 +261,102 @@ class Board:
         self.castling_rights &= ~0b1100 if clr else ~0b0011
 
         return True
+    
+    # -------------------------
+    # ATTACK BITBOARDS
+    # -------------------------
+    def pawn_attacks(self, clr):
+        pawns = self.wp if clr else self.bp
+
+        NOT_A_FILE = 0xfefefefefefefefe
+        NOT_H_FILE = 0x7f7f7f7f7f7f7f7f
+
+        attacks = 0
+
+        if clr:
+            attacks  |= (pawns & NOT_A_FILE) >> 7
+            attacks |= (pawns & NOT_H_FILE) >> 9
+        else:   
+            attacks |= (pawns & NOT_A_FILE) << 9
+            attacks |= (pawns & NOT_H_FILE) << 7
+
+        return attacks & 0xFFFFFFFFFFFFFFFF #64 bit masking
+    
+    def knight_attacks(self, clr):
+        knights = self.wn if clr else self.bn
+
+        NOT_A_FILE  = 0xfefefefefefefefe
+        NOT_H_FILE  = 0x7f7f7f7f7f7f7f7f
+        NOT_AB_FILE = 0xfcfcfcfcfcfcfcfc
+        NOT_GH_FILE = 0x3f3f3f3f3f3f3f3f
+
+        attacks = 0
+
+        attacks |= (knights & NOT_H_FILE)  << 17
+        attacks |= (knights & NOT_A_FILE)  << 15
+        attacks |= (knights & NOT_GH_FILE) << 10
+        attacks |= (knights & NOT_AB_FILE) << 6
+
+        attacks |= (knights & NOT_H_FILE)  >> 15
+        attacks |= (knights & NOT_A_FILE)  >> 17
+        attacks |= (knights & NOT_GH_FILE) >> 6
+        attacks |= (knights & NOT_AB_FILE) >> 10
+
+        return attacks & 0xFFFFFFFFFFFFFFFF
+    
+    def rook_attacks(self, clr):
+        rooks = self.wr if clr else self.br
+        own, enemy = (self.white, self.black) if clr else (self.black, self.white)
+        squares = self.extract_squares(rooks)
+        attacks = 0
+        for i in squares:
+            attacks |= self.rook_moves(i, own, enemy, True)
+        return attacks
+
+    def bishop_attacks(self, clr):
+        bishops = self.wb if clr else self.bb
+        own, enemy = (self.white, self.black) if clr else (self.black, self.white)
+        squares = self.extract_squares(bishops)
+        attacks = 0
+        for i in squares:
+            attacks |= self.bishop_moves(i, own, enemy, True)
+        return attacks
+    
+    def queen_attacks(self, clr):
+        queens = self.wq if clr else self.bq
+        own, enemy = (self.white, self.black) if clr else (self.black, self.white)
+        squares = self.extract_squares(queens)
+        attacks = 0
+        for i in squares:
+            attacks |= self.queen_moves(i, own, enemy, True)
+        return attacks
+    
+    def king_attacks(self, clr):
+        king = self.wk if clr else self.bk
+        NOT_A_FILE  = 0xfefefefefefefefe
+        NOT_H_FILE  = 0x7f7f7f7f7f7f7f7f
+        attacks = 0
+
+        attacks |= (king & NOT_H_FILE)  << 1
+        attacks |= (king & NOT_A_FILE)  << 7
+        attacks |= king << 8
+        attacks |= (king & NOT_H_FILE) << 9
+
+        attacks |= (king & NOT_A_FILE)  >> 1
+        attacks |= (king & NOT_H_FILE)  >> 7
+        attacks |= king >> 8
+        attacks |= (king & NOT_A_FILE) >> 9
+
+        return attacks & 0xFFFFFFFFFFFFFFFF #64 bit masking
+
+
+    def king_in_check(self, clr):
+        enemy_attack_board = self.pawn_attacks(not clr) | self.knight_attacks(not clr) | self.bishop_attacks(not clr) | self.rook_attacks(not clr) | self.queen_attacks(not clr) | self.king_attacks(not clr)
+        king = self.wk if clr else self.bk
+        if king & enemy_attack_board:
+            return True
+        return False
+
 
     # -------------------------
     # PAWN
@@ -251,8 +367,6 @@ class Board:
 
         direction = -8 if clr else 8
         start_rank = 6 if clr else 1
-        cap_dir_one = -9 if clr else 9
-        cap_dir_two = -7 if clr else 7
 
         r1, f1 = divmod(sq_from, 8)
         r2, f2 = divmod(sq_to, 8)
@@ -270,7 +384,7 @@ class Board:
                     return True
 
         # capture
-        if abs(f1 - f2) == 1 and (sq_to == sq_from + cap_dir_one) or (sq_to == sq_from + cap_dir_two):
+        if abs(f1 - f2) == 1 and abs(sq_to - sq_from) in (9, 7):
             enemy = self.black if clr else self.white
             if target & enemy:
                 return True

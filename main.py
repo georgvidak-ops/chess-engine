@@ -6,6 +6,7 @@ def main():
     while True:
         board.print_board()
         board.castling = False
+        print("King is in check") if board.king_in_check(board.white_to_move) else print("King is Safe")
 
         move = input("Enter move (e.g. e2e4) (or enter q to quit the program): ")
 
