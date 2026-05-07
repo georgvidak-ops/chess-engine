@@ -16,6 +16,7 @@ def main():
             return False
 
         move = input("Enter move (e.g. e2e4) (or enter q to quit the program): ")
+        print(board.en_passant_square)
 
         if move == "q":
             break
@@ -53,7 +54,6 @@ def main():
             board.makeMove_sq(sq_from, sq_to, False)
             if avoid_check(sq_from, sq_to, not board.white_to_move):
                 continue
-
             print("Valid move")
         else:
             print("Invalid move")

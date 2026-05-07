@@ -3,6 +3,7 @@ class Board:
         self.init_bitboards()
         self.white_to_move = True
         self.castling_rights = 0b1111 #each bit represents a castling right 1)White short, 2)White long, 3)Black short, 4)Black long
+        self.en_passant_square = 0
 
     # -------------------------
     # INIT POSITION
@@ -381,12 +382,16 @@ class Board:
             if r1 == start_rank and sq_to == sq_from + 2 * direction:
                 mid = sq_from + direction
                 if not ((1 << mid) & occ) and not (target & occ):
+                    self.en_passant_square = mid
                     return True
 
         # capture
         if abs(f1 - f2) == 1 and abs(sq_to - sq_from) in (9, 7):
             enemy = self.black if clr else self.white
             if target & enemy:
+                return True
+            elif not (target & enemy) and self.en_passant_square  == sq_to:
+                self.en_passant_capture_removal(sq_to - direction)
                 return True
 
         return False
@@ -429,6 +434,10 @@ class Board:
 
         from_bit = 1 << sq_from
         to_bit = 1 << sq_to
+
+        # en_passant_sqaure reset
+        if not (abs(sq_from - sq_to) == 16 and piece.lower() == "p"): # double pawn push
+            self.en_passant_square = 0
 
         # capture removal
         for attr in ["wp","wn","wb","wr","wq","wk","bp","bn","bb","br","bq","bk"]:
@@ -474,6 +483,15 @@ class Board:
 
         # restore turn
         self.white_to_move = not self.white_to_move if not castling else self.white_to_move
+        return True
+
+    def en_passant_capture_removal(self, sq):
+        to_bit = 1 << sq
+        for attr in ["wp","bp"]:
+            if getattr(self, attr) & to_bit:
+                setattr(self, attr, getattr(self, attr) & ~to_bit)
+        return True
+
 
     # -------------------------
     # PRINT BOARD
