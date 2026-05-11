@@ -4,6 +4,8 @@ class Board:
         self.white_to_move = True
         self.castling_rights = 0b1111 #each bit represents a castling right 1)White short, 2)White long, 3)Black short, 4)Black long
         self.en_passant_square = 0
+        self.captured_piece = "."
+        self.just_promoted = False
 
     # -------------------------
     # INIT POSITION
@@ -395,6 +397,24 @@ class Board:
                 return True
 
         return False
+    
+    def promotion(self, sq, making): # making == True means the program is making a move, False means unmaking
+        clr = self.white_to_move
+        queen_bb = self.wq if clr else self.bq
+        pawn_bb = self.wp if clr else self.bp
+        if making:
+            pawn_bb &= ~(1 << sq)
+            queen_bb |= (1 << sq)
+        else:
+            queen_bb &= ~(1 << sq)
+            pawn_bb |= (1 << sq)
+
+        attr1, attr2 = ("wp", "wq") if clr else ("bp", "bq")
+        setattr(self, attr1, pawn_bb)
+        setattr(self, attr2, queen_bb)
+
+        return True
+
 
     # -------------------------
     # VALIDITY WRAPPER
@@ -435,13 +455,17 @@ class Board:
         from_bit = 1 << sq_from
         to_bit = 1 << sq_to
 
-        # en_passant_sqaure reset
+        self.just_promoted = False
+
+        # en_passant_square reset
         if not (abs(sq_from - sq_to) == 16 and piece.lower() == "p"): # double pawn push
             self.en_passant_square = 0
 
+        self.captured_piece = "."
         # capture removal
         for attr in ["wp","wn","wb","wr","wq","wk","bp","bn","bb","br","bq","bk"]:
             if getattr(self, attr) & to_bit:
+                self.captured_piece = attr
                 setattr(self, attr, getattr(self, attr) & ~to_bit)
 
         # move piece
@@ -455,6 +479,10 @@ class Board:
         bb |= to_bit
         setattr(self, mapping[piece], bb)
 
+        if piece.lower() == "p" and sq_to // 8 in (0,7):
+            self.just_promoted = True
+            self.promotion(sq_to, True)
+
         self.white_to_move = not self.white_to_move if not castling else self.white_to_move
         return True
     
@@ -462,7 +490,6 @@ class Board:
         from_bit = 1 << sq_from
         to_bit = 1 << sq_to
         moved_piece = self.get_piece(sq_to)
-        captured_piece = self.get_piece(sq_from)
 
         mapping = {
             "P":"wp","N":"wn","B":"wb","R":"wr","Q":"wq","K":"wk",
@@ -476,13 +503,17 @@ class Board:
         setattr(self, mapping[moved_piece], bb)
 
         # restore captured piece (if any)
-        if captured_piece != ".":
-            cap_bb = getattr(self, mapping[captured_piece])
+        if self.captured_piece != ".":
+            cap_bb = getattr(self, self.captured_piece)
             cap_bb |= to_bit
-            setattr(self, mapping[captured_piece], cap_bb)
+            setattr(self, self.captured_piece, cap_bb)
 
         # restore turn
         self.white_to_move = not self.white_to_move if not castling else self.white_to_move
+
+        # restore promoted piece (if any)
+        if moved_piece.lower() == "q" and sq_to // 8 in (0,7) and self.just_promoted:
+            self.promotion(sq_from, False)
         return True
 
     def en_passant_capture_removal(self, sq):

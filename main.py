@@ -16,7 +16,6 @@ def main():
             return False
 
         move = input("Enter move (e.g. e2e4) (or enter q to quit the program): ")
-        print(board.en_passant_square)
 
         if move == "q":
             break
