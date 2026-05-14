@@ -418,6 +418,35 @@ class Board:
 
         return moves & 0xFFFFFFFFFFFFFFFF
     
+    def legal_move_castling(self, clr):
+        legal_castles = []
+        from_sq = 60 if clr else 4 # king square based on colour
+        to_sq_short = 62 if clr else 6
+        to_sq_long = 58 if clr else 2
+
+        pieces_short = [61, 62] if clr else [5, 6]
+        pieces_long = [57, 58, 59] if clr else [1, 2, 3]
+
+        can_s = True # ability to castle short based solely on occupied squares
+        can_l = True # ability to castle long based solely on occupied squares
+        for piece in pieces_short:
+            if (1 << piece) & self.occupied:
+                can_s = False
+        for piece in pieces_long:
+            if (1 << piece) & self.occupied:
+                can_l = False
+
+        mask_s = 0b1000 if clr else 0b0010
+        mask_l = 0b0100 if clr else 0b0001
+
+        if can_s and self.castling_rights & mask_s:
+            legal_castles.append((from_sq, to_sq_short))
+        if can_l and self.castling_rights & mask_l:
+            legal_castles.append((from_sq, to_sq_long))
+
+        return legal_castles
+
+    
     def generate_legal_moves(self, clr):
         legal_moves = []
         own = self.white if clr else self.black
@@ -463,7 +492,7 @@ class Board:
                     # undo move
                     self.unmakeMove_sq(from_sq, to_sq, False)
 
-        return legal_moves
+        return legal_moves + self.legal_move_castling(clr)
 
 
     # -------------------------
