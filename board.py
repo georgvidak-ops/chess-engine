@@ -268,8 +268,10 @@ class Board:
     # -------------------------
     # ATTACK BITBOARDS
     # -------------------------
-    def pawn_attacks(self, clr):
+    def pawn_attacks(self, from_sq, clr):
         pawns = self.wp if clr else self.bp
+        if from_sq != None:
+            pawns = 1 << from_sq
 
         NOT_A_FILE = 0xfefefefefefefefe
         NOT_H_FILE = 0x7f7f7f7f7f7f7f7f
@@ -277,7 +279,7 @@ class Board:
         attacks = 0
 
         if clr:
-            attacks  |= (pawns & NOT_A_FILE) >> 7
+            attacks |= (pawns & NOT_A_FILE) >> 7
             attacks |= (pawns & NOT_H_FILE) >> 9
         else:   
             attacks |= (pawns & NOT_A_FILE) << 9
@@ -285,8 +287,10 @@ class Board:
 
         return attacks & 0xFFFFFFFFFFFFFFFF #64 bit masking
     
-    def knight_attacks(self, clr):
+    def knight_attacks(self, from_sq, clr):
         knights = self.wn if clr else self.bn
+        if from_sq != None:
+            knights = 1 << from_sq
 
         NOT_A_FILE  = 0xfefefefefefefefe
         NOT_H_FILE  = 0x7f7f7f7f7f7f7f7f
@@ -307,8 +311,11 @@ class Board:
 
         return attacks & 0xFFFFFFFFFFFFFFFF
     
-    def rook_attacks(self, clr):
+    def rook_attacks(self, from_sq, clr):
         rooks = self.wr if clr else self.br
+        if from_sq != None:
+            rooks = 1 << from_sq
+
         own, enemy = (self.white, self.black) if clr else (self.black, self.white)
         squares = self.extract_squares(rooks)
         attacks = 0
@@ -316,8 +323,11 @@ class Board:
             attacks |= self.rook_moves(i, own, enemy, True)
         return attacks
 
-    def bishop_attacks(self, clr):
+    def bishop_attacks(self, from_sq, clr):
         bishops = self.wb if clr else self.bb
+        if from_sq != None:
+            bishops = 1<< from_sq
+
         own, enemy = (self.white, self.black) if clr else (self.black, self.white)
         squares = self.extract_squares(bishops)
         attacks = 0
@@ -325,8 +335,11 @@ class Board:
             attacks |= self.bishop_moves(i, own, enemy, True)
         return attacks
     
-    def queen_attacks(self, clr):
+    def queen_attacks(self, from_sq, clr):
         queens = self.wq if clr else self.bq
+        if from_sq != None:
+            queens = 1 << from_sq
+
         own, enemy = (self.white, self.black) if clr else (self.black, self.white)
         squares = self.extract_squares(queens)
         attacks = 0
@@ -354,11 +367,103 @@ class Board:
 
 
     def king_in_check(self, clr):
-        enemy_attack_board = self.pawn_attacks(not clr) | self.knight_attacks(not clr) | self.bishop_attacks(not clr) | self.rook_attacks(not clr) | self.queen_attacks(not clr) | self.king_attacks(not clr)
+        enemy_attack_board = self.pawn_attacks(None, not clr) | self.knight_attacks(None, not clr) | self.bishop_attacks(None, not clr) | self.rook_attacks(None, not clr) | self.queen_attacks(None, not clr) | self.king_attacks(not clr)
         king = self.wk if clr else self.bk
         if king & enemy_attack_board:
             return True
         return False
+    
+    # -------------------------
+    # LEGAL MOVES
+    # -------------------------
+    def pawn_moves(self, from_sq, clr):
+        occ = self.occupied
+        moves = 0
+
+        direction = -8 if clr else 8
+        start_rank = range(48, 56) if clr else range(8, 16)
+
+        # single push
+        one_step = from_sq + direction
+
+        if 0 <= one_step < 64:
+            one_bit = 1 << one_step
+
+            if not (one_bit & occ):
+                moves |= one_bit
+
+                # double push
+                if from_sq in start_rank:
+                    two_step = from_sq + 2 * direction
+
+                    if 0 <= two_step < 64:
+                        two_bit = 1 << two_step
+
+                        if not (two_bit & occ):
+                            moves |= two_bit
+
+        # captures
+        attacks = self.pawn_attacks(from_sq, clr)
+
+        enemy = self.black if clr else self.white
+
+        moves |= attacks & enemy
+
+        # en passant
+        if self.en_passant_square is not None:
+            ep_bit = 1 << self.en_passant_square
+
+            if attacks & ep_bit:
+                moves |= ep_bit
+
+        return moves & 0xFFFFFFFFFFFFFFFF
+    
+    def generate_legal_moves(self, clr):
+        legal_moves = []
+        own = self.white if clr else self.black
+        enemy = self.black if clr else self.white
+
+        pieces = ["wp","wn","wb","wr","wq","wk"] if clr else ["bp","bn","bb","br","bq","bk"]
+
+        for piece in pieces:
+            bb = getattr(self, piece)
+
+            while bb:
+                from_bit = bb & -bb
+                from_sq = from_bit.bit_length() - 1
+                bb &= bb - 1  # remove LSB
+
+                # generate pseudo-legal targets for this square
+                if piece == "wp" or piece == "bp":
+                    moves = self.pawn_moves(from_sq, clr)
+                elif piece == "wn" or piece == "bn":
+                    moves = self.knight_attacks(from_sq, clr) & ~own
+                elif piece == "wb" or piece == "bb":
+                    moves = self.bishop_moves(from_sq, own, enemy, False)
+                elif piece == "wr" or piece == "br":
+                    moves = self.rook_moves(from_bit, own, enemy, False)
+                elif piece == "wq" or piece == "bq":
+                    moves = self.queen_moves(from_sq, own, enemy, False)
+                else:  # king
+                    moves = self.king_attacks(clr) & ~own
+
+                # iterate targets
+                while moves:
+                    to_bit = moves & -moves
+                    to_sq = to_bit.bit_length() - 1
+                    moves &= moves - 1
+
+                    # make move
+                    self.makeMove_sq(from_sq, to_sq, False)
+
+                    # legality check
+                    if not self.king_in_check(clr):
+                        legal_moves.append((from_sq, to_sq))
+
+                    # undo move
+                    self.unmakeMove_sq(from_sq, to_sq, False)
+
+        return legal_moves
 
 
     # -------------------------

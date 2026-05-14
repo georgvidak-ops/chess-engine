@@ -7,6 +7,15 @@ def main():
         board.print_board()
         board.castling = False
         print("King is in check") if board.king_in_check(board.white_to_move) else print("King is Safe")
+        moves = len(board.generate_legal_moves(board.white_to_move))
+        print("Legal moves:", moves)
+        if moves == 0:
+            if board.king_in_check(board.white_to_move):
+                print("Checkmate!")
+                break
+            else:
+                print("Stalemate!")
+                break
 
         def avoid_check(sq_from, sq_to, clr):
             if board.king_in_check(clr):
