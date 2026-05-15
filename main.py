@@ -9,6 +9,7 @@ def main():
         print("King is in check") if board.king_in_check(board.white_to_move) else print("King is Safe")
         moves = len(board.generate_legal_moves(board.white_to_move))
         print("Legal moves:", moves)
+        print(board.en_passant_square)
         if moves == 0:
             if board.king_in_check(board.white_to_move):
                 print("Checkmate!")
@@ -33,22 +34,22 @@ def main():
             if move == "O-O":
                 if board.CheckCastling(True, board.white_to_move):
                     sq_from, sq_to = board.parse("e1g1") if board.white_to_move else board.parse("e8g8")
-                    board.makeMove_sq(sq_from, sq_to, True)
+                    board.makeMove_sq(sq_from, sq_to, True, False)
                     if avoid_check(sq_from, sq_to, board.white_to_move): #see if castling is possible (threats)
                         continue
                     sq_from, sq_to = board.parse("h1f1") if board.white_to_move else board.parse("h8f8")
-                    board.makeMove_sq(sq_from, sq_to, False)
+                    board.makeMove_sq(sq_from, sq_to, False, False)
                     continue
                 print("Cant castle short")
                 continue
             elif move == "O-O-O":
                 if board.CheckCastling(False, board.white_to_move):
                     sq_from, sq_to = board.parse("e1c1") if board.white_to_move else board.parse("e8c8")
-                    board.makeMove_sq(sq_from, sq_to, True)
+                    board.makeMove_sq(sq_from, sq_to, True, False)
                     if avoid_check(sq_from, sq_to, board.white_to_move): #check if castling is possible (threats)
                         continue
                     sq_from, sq_to = board.parse("a1d1") if board.white_to_move else board.parse("a8d8")
-                    board.makeMove_sq(sq_from, sq_to, False)
+                    board.makeMove_sq(sq_from, sq_to, False, False)
                     continue
                 print("Can castle long")
                 continue
@@ -59,7 +60,7 @@ def main():
         sq_from, sq_to = board.parse(move)
 
         if board.checkValidity_sq(sq_from, sq_to):
-            board.makeMove_sq(sq_from, sq_to, False)
+            board.makeMove_sq(sq_from, sq_to, False, False)
             if avoid_check(sq_from, sq_to, not board.white_to_move):
                 continue
             print("Valid move")

@@ -483,7 +483,7 @@ class Board:
                     moves &= moves - 1
 
                     # make move
-                    self.makeMove_sq(from_sq, to_sq, False)
+                    self.makeMove_sq(from_sq, to_sq, False, True)
 
                     # legality check
                     if not self.king_in_check(clr):
@@ -518,6 +518,7 @@ class Board:
             if r1 == start_rank and sq_to == sq_from + 2 * direction:
                 mid = sq_from + direction
                 if not ((1 << mid) & occ) and not (target & occ):
+                    print("we got here")
                     self.en_passant_square = mid
                     return True
 
@@ -581,7 +582,7 @@ class Board:
     # MAKE MOVE
     # -------------------------
 
-    def makeMove_sq(self, sq_from, sq_to, castling):
+    def makeMove_sq(self, sq_from, sq_to, castling, generating):
         piece = self.get_piece(sq_from)
         if piece == ".":
             return False
@@ -593,7 +594,7 @@ class Board:
 
         # en_passant_square reset
         if not (abs(sq_from - sq_to) == 16 and piece.lower() == "p"): # double pawn push
-            self.en_passant_square = 0
+            if not generating: self.en_passant_square = 0
 
         self.captured_piece = "."
         # capture removal
