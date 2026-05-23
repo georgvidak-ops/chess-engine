@@ -6,6 +6,7 @@ class Board:
         self.en_passant_square = 0
         self.captured_piece = "."
         self.just_promoted = False
+        self.move_stack = []
 
     # -------------------------
     # INIT POSITION
@@ -273,8 +274,8 @@ class Board:
         if from_sq != None:
             pawns = 1 << from_sq
 
-        NOT_A_FILE = 0xfefefefefefefefe
-        NOT_H_FILE = 0x7f7f7f7f7f7f7f7f
+        NOT_H_FILE = 0xfefefefefefefefe
+        NOT_A_FILE = 0x7f7f7f7f7f7f7f7f
 
         attacks = 0
 
@@ -470,7 +471,7 @@ class Board:
                 elif piece == "wb" or piece == "bb":
                     moves = self.bishop_moves(from_sq, own, enemy, False)
                 elif piece == "wr" or piece == "br":
-                    moves = self.rook_moves(from_bit, own, enemy, False)
+                    moves = self.rook_moves(from_sq, own, enemy, False)
                 elif piece == "wq" or piece == "bq":
                     moves = self.queen_moves(from_sq, own, enemy, False)
                 else:  # king
@@ -483,7 +484,7 @@ class Board:
                     moves &= moves - 1
 
                     # make move
-                    self.makeMove_sq(from_sq, to_sq, False, True)
+                    self.makeMove_sq(from_sq, to_sq, False)
 
                     # legality check
                     if not self.king_in_check(clr):
@@ -518,7 +519,6 @@ class Board:
             if r1 == start_rank and sq_to == sq_from + 2 * direction:
                 mid = sq_from + direction
                 if not ((1 << mid) & occ) and not (target & occ):
-                    print("we got here")
                     self.en_passant_square = mid
                     return True
 
@@ -534,7 +534,7 @@ class Board:
         return False
     
     def promotion(self, sq, making): # making == True means the program is making a move, False means unmaking
-        clr = self.white_to_move
+        clr = self.white_to_move if making else not self.white_to_move
         queen_bb = self.wq if clr else self.bq
         pawn_bb = self.wp if clr else self.bp
         if making:
@@ -582,7 +582,7 @@ class Board:
     # MAKE MOVE
     # -------------------------
 
-    def makeMove_sq(self, sq_from, sq_to, castling, generating):
+    def makeMove_sq(self, sq_from, sq_to, castling):
         piece = self.get_piece(sq_from)
         if piece == ".":
             return False
@@ -591,10 +591,11 @@ class Board:
         to_bit = 1 << sq_to
 
         self.just_promoted = False
+        old_en_passant_square = self.en_passant_square
 
         # en_passant_square reset
         if not (abs(sq_from - sq_to) == 16 and piece.lower() == "p"): # double pawn push
-            if not generating: self.en_passant_square = 0
+            self.en_passant_square = 0
 
         self.captured_piece = "."
         # capture removal
@@ -619,17 +620,48 @@ class Board:
             self.promotion(sq_to, True)
 
         self.white_to_move = not self.white_to_move if not castling else self.white_to_move
+
+        # move stacking in memory
+        moved_piece = piece
+        captured_piece = self.captured_piece
+        old_castling_rights = self.castling_rights
+        promotion_happened = self.just_promoted
+        old_white_to_move_after = self.white_to_move
+
+        move_state = (
+            moved_piece,
+            captured_piece,
+            old_en_passant_square,
+            old_castling_rights,
+            promotion_happened,
+            old_white_to_move_after
+        )
+        self.move_stack.append(move_state)
         return True
     
     def unmakeMove_sq(self, sq_from, sq_to, castling):
+
+        # restore saved move state
+        (
+            moved_piece,
+            captured_piece,
+            old_en_passant_square,
+            old_castling_rights,
+            promotion_happened,
+            old_white_to_move_after
+        ) = self.move_stack.pop()
+
         from_bit = 1 << sq_from
         to_bit = 1 << sq_to
-        moved_piece = self.get_piece(sq_to)
 
         mapping = {
             "P":"wp","N":"wn","B":"wb","R":"wr","Q":"wq","K":"wk",
             "p":"bp","n":"bn","b":"bb","r":"br","q":"bq","k":"bk"
         }
+
+        # undo promotion
+        if moved_piece.lower() == "p" and sq_to // 8 in (0,7) and promotion_happened:
+            self.promotion(sq_to, False)
 
         # move piece back
         bb = getattr(self, mapping[moved_piece])
@@ -637,18 +669,21 @@ class Board:
         bb |= from_bit
         setattr(self, mapping[moved_piece], bb)
 
-        # restore captured piece (if any)
-        if self.captured_piece != ".":
-            cap_bb = getattr(self, self.captured_piece)
+        # restore captured piece
+        if captured_piece != ".":
+            cap_bb = getattr(self, captured_piece)
+
             cap_bb |= to_bit
-            setattr(self, self.captured_piece, cap_bb)
 
-        # restore turn
-        self.white_to_move = not self.white_to_move if not castling else self.white_to_move
+            setattr(self, captured_piece, cap_bb)
 
-        # restore promoted piece (if any)
-        if moved_piece.lower() == "q" and sq_to // 8 in (0,7) and self.just_promoted:
-            self.promotion(sq_from, False)
+        # restore game state
+        self.en_passant_square = old_en_passant_square
+
+        self.castling_rights = old_castling_rights
+
+        self.white_to_move = not old_white_to_move_after if not castling else old_white_to_move_after
+
         return True
 
     def en_passant_capture_removal(self, sq):
@@ -657,6 +692,47 @@ class Board:
             if getattr(self, attr) & to_bit:
                 setattr(self, attr, getattr(self, attr) & ~to_bit)
         return True
+    
+    # -------------------------
+    # PERFT TESTING
+    # -------------------------
+
+    def perft(self, depth, clr, root_depth=None):
+        # If root_depth isn't set, initialize it to the starting depth
+        if root_depth is None:
+            root_depth = depth
+
+        # reached leaf node
+        if depth == 0:
+            return 1
+
+        nodes = 0
+
+        # generate all legal moves
+        legal_moves = self.generate_legal_moves(clr)
+
+        # recurse through move tree
+        for sq_from, sq_to in legal_moves:
+
+            # make move
+            self.makeMove_sq(sq_from, sq_to, False)
+            # recurse and get count for this specific branch
+            branch_nodes = self.perft(depth - 1, not clr, root_depth)
+            nodes += branch_nodes
+
+            # undo move
+            self.unmakeMove_sq(sq_from, sq_to, False)
+
+            # SPLIT/DIVIDE: If at the top-most level of the search, print the results for this move
+            if depth == root_depth:
+                move_str = f"{sq_from} -> {sq_to}" 
+                print(f"{move_str}: {branch_nodes}")
+
+        # Print summary line
+        if depth == root_depth:
+            print(f"\nTotal Nodes: {nodes}")
+
+        return nodes
 
 
     # -------------------------
