@@ -20,6 +20,18 @@ class Machine:
         "k": 0
     }
 
+    def move_score(self, move):
+        sq_from, sq_to = move
+
+        attacker = self.board.get_piece(sq_from)
+        target = self.board.get_piece(sq_to)
+
+        score = 0
+        if target != ".":
+            score += 10 * abs(self.piece_values[target]) - abs(self.piece_values[attacker])
+
+        return score
+
     def evaluate(self):
         eval = 0
         for sq in range(64):
@@ -37,6 +49,7 @@ class Machine:
 
         clr = maximizing
         legal_moves = board.generate_legal_moves(clr)
+        legal_moves.sort(key = self.move_score, reverse = True)
 
         # no legal moves
         if not legal_moves:
@@ -48,10 +61,10 @@ class Machine:
 
             max_eval = -INF
             for sq_from, sq_to in legal_moves:
-                board.makeMove_sq(sq_from, sq_to, False)
+                board.makeMove_sq(sq_from, sq_to)
 
                 eval = self.alpha_beta(depth - 1, alpha, beta, False)
-                board.unmakeMove_sq(sq_from, sq_to, False)
+                board.unmakeMove_sq(sq_from, sq_to)
 
                 max_eval = max(max_eval, eval)
                 alpha = max(alpha, eval)
@@ -64,10 +77,10 @@ class Machine:
 
             min_eval = INF
             for sq_from, sq_to in legal_moves:
-                board.makeMove_sq(sq_from, sq_to, False)
+                board.makeMove_sq(sq_from, sq_to)
 
                 eval = self.alpha_beta(depth - 1, alpha, beta, True)
-                board.unmakeMove_sq(sq_from, sq_to, False)
+                board.unmakeMove_sq(sq_from, sq_to)
 
                 min_eval = min(min_eval, eval)
                 beta = min(beta, eval)
@@ -83,13 +96,14 @@ class Machine:
         best_eval = -INF if board.white_to_move else INF
 
         legal_moves = board.generate_legal_moves(board.white_to_move)
+        print(len(legal_moves))
 
         for sq_from, sq_to in legal_moves:
 
-            board.makeMove_sq(sq_from, sq_to, False)
-            eval = self.alpha_beta(depth - 1, -INF, INF, not board.white_to_move)
+            board.makeMove_sq(sq_from, sq_to)
+            eval = self.alpha_beta(depth - 1, -INF, INF, board.white_to_move)
 
-            board.unmakeMove_sq(sq_from, sq_to, False)
+            board.unmakeMove_sq(sq_from, sq_to)
 
             if board.white_to_move:
                 if eval > best_eval:
@@ -100,5 +114,5 @@ class Machine:
                 if eval < best_eval:
                     best_eval = eval
                     best_move = (sq_from, sq_to)
-
+        print(best_move)
         return best_move

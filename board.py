@@ -210,15 +210,7 @@ class Board:
 
         moves = self.rook_moves(sq_from, own, enemy, False)
 
-        if not bool(moves & (1 << sq_to)): return False #no need to check for castling rights if move is invalid
-        if clr and (self.castling_rights & 0b1000) and sq_from & (1 << 63): #check if white's a1 rook moved and removed castling rights
-            self.castling_rights ^= 0b1000
-        elif clr and (self.castling_rights & 0b0100) and sq_from & (1 << 56): #check if white's h1 rook moved and removed castling rights
-            self.castling_rights ^= 0b0100
-        elif not clr and (self.castling_rights & 0b0010) and sq_from & (1 << 0): #check if black's a8 rook moved and removed castling rights
-            self.castling_rights ^= 0b0010
-        elif not clr and (self.castling_rights & 0b0001) and sq_from & (1 << 7): #check if black's h8 rook moved and removed castling rights
-            self.castling_rights ^= 0b0001
+        if not bool(moves & (1 << sq_to)): return False
 
         return True
     
@@ -261,8 +253,6 @@ class Board:
             return False
         
         if ((1 << sq_to) & own): return False
-
-        self.castling_rights &= ~0b1100 if clr else ~0b0011
 
         return True
     
@@ -484,14 +474,14 @@ class Board:
                     moves &= moves - 1
 
                     # make move
-                    self.makeMove_sq(from_sq, to_sq, False)
+                    self.makeMove_sq(from_sq, to_sq)
 
                     # legality check
                     if not self.king_in_check(clr):
                         legal_moves.append((from_sq, to_sq))
 
                     # undo move
-                    self.unmakeMove_sq(from_sq, to_sq, False)
+                    self.unmakeMove_sq(from_sq, to_sq)
 
         return legal_moves + self.legal_move_castling(clr)
 
@@ -577,15 +567,72 @@ class Board:
             return self.KingValidity(sq_from, sq_to, clr)
 
         return False
+    
+    
+    # -------------------------
+    # CASTLE FUNCTION
+    # -------------------------
+
+    def castling_rights_modify(self, piece, sq_from):
+        if piece == "K":
+            self.castling_rights &= ~0b1100
+        elif piece == "k":
+            self.castling_rights &= ~0b0011
+
+        elif piece == "R":
+            if sq_from == 63:
+                self.castling_rights &= ~0b1000
+            elif sq_from == 56:
+                self.castling_rights &= ~0b0100
+
+        elif piece == "r":
+            if sq_from == 7:
+                self.castling_rights &= ~0b0001
+            elif sq_from == 0:
+                self.castling_rights &= ~0b0010
+
+    def castle(self, sq_from, sq_to, making):
+        piece = self.get_piece(sq_from if making else sq_to)
+        clr = piece.isupper()
+        short = sq_to > sq_from
+        r = 0
+        if clr and short:
+            r = self.parse("h1f1") if making else self.parse("f1h1")
+        elif clr and not short:
+            r = self.parse("a1d1") if making else self.parse("d1a1")
+        elif not clr and short:
+            r = self.parse("h8f8") if making else self.parse("f8h8")
+        elif not clr and not short: 
+            r = self.parse("a8d8") if making else self.parse("d8a8")
+
+        from_sq, to_sq = r
+        if not making:
+            self.unmakeMove_sq(to_sq, from_sq, True)
+            return True
+        if (sq_from, sq_to) in self.legal_move_castling(clr):
+            if making:
+                self.makeMove_sq(from_sq, to_sq, True)
+            return True
+        else:
+            print("Cant castle")
+            return False
+
 
     # -------------------------
     # MAKE MOVE
     # -------------------------
 
-    def makeMove_sq(self, sq_from, sq_to, castling):
+    def makeMove_sq(self, sq_from, sq_to, castling=False):
         piece = self.get_piece(sq_from)
+        old_en_passant_square = 0
+        if abs(sq_to - sq_from) == 2 and piece.lower() == "k":
+            if not self.castle(sq_from, sq_to, True): print("Idiot")
+           
         if piece == ".":
             return False
+        
+        old_castling_rights = self.castling_rights
+        self.castling_rights_modify(piece, sq_from)
 
         from_bit = 1 << sq_from
         to_bit = 1 << sq_to
@@ -619,12 +666,12 @@ class Board:
             self.just_promoted = True
             self.promotion(sq_to, True)
 
-        self.white_to_move = not self.white_to_move if not castling else self.white_to_move
+        if castling: return True #when the rook move of castling takes place, dont save it in the stack
+        self.white_to_move = not self.white_to_move
 
         # move stacking in memory
         moved_piece = piece
         captured_piece = self.captured_piece
-        old_castling_rights = self.castling_rights
         promotion_happened = self.just_promoted
         old_white_to_move_after = self.white_to_move
 
@@ -634,23 +681,29 @@ class Board:
             old_en_passant_square,
             old_castling_rights,
             promotion_happened,
-            old_white_to_move_after
+            old_white_to_move_after,
         )
         self.move_stack.append(move_state)
         return True
     
-    def unmakeMove_sq(self, sq_from, sq_to, castling):
-
+    def unmakeMove_sq(self, sq_from, sq_to, castling=False):
+        moved_piece, old_en_passant_square, old_castling_rights, promotion_happened, old_white_to_move_after = (0,0,0,0,0)
+        captured_piece = "."
         # restore saved move state
-        (
-            moved_piece,
-            captured_piece,
-            old_en_passant_square,
-            old_castling_rights,
-            promotion_happened,
-            old_white_to_move_after
-        ) = self.move_stack.pop()
+        if not castling:
+            (
+                moved_piece,
+                captured_piece,
+                old_en_passant_square,
+                old_castling_rights,
+                promotion_happened,
+                old_white_to_move_after,
+            ) = self.move_stack.pop()
+        else:
+            moved_piece = self.get_piece(sq_to)
 
+        if abs(sq_to - sq_from) == 2 and moved_piece.lower() == "k":
+            self.castle(sq_from, sq_to, False)
         from_bit = 1 << sq_from
         to_bit = 1 << sq_to
 
@@ -678,11 +731,13 @@ class Board:
             setattr(self, captured_piece, cap_bb)
 
         # restore game state
+        if castling: return True
+
         self.en_passant_square = old_en_passant_square
 
         self.castling_rights = old_castling_rights
 
-        self.white_to_move = not old_white_to_move_after if not castling else old_white_to_move_after
+        self.white_to_move = not old_white_to_move_after
 
         return True
 
@@ -715,13 +770,13 @@ class Board:
         for sq_from, sq_to in legal_moves:
 
             # make move
-            self.makeMove_sq(sq_from, sq_to, False)
+            self.makeMove_sq(sq_from, sq_to)
             # recurse and get count for this specific branch
             branch_nodes = self.perft(depth - 1, not clr, root_depth)
             nodes += branch_nodes
 
             # undo move
-            self.unmakeMove_sq(sq_from, sq_to, False)
+            self.unmakeMove_sq(sq_from, sq_to)
 
             # SPLIT/DIVIDE: If at the top-most level of the search, print the results for this move
             if depth == root_depth:
