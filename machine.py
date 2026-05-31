@@ -20,6 +20,80 @@ class Machine:
         "k": 0
     }
 
+    # -------------------------
+    # Piece Square Tables
+    # -------------------------
+
+    PAWN_TABLE = [
+        0,  0,  0,  0,  0,  0,  0,  0,
+        10, 10, 10, 10, 10, 10, 10, 10,
+        15, 15, 20, 25, 25, 20, 15, 15,
+        20, 20, 25, 35, 35, 25, 20, 20,
+        25, 25, 30, 40, 40, 30, 25, 25,
+        30, 30, 35, 45, 45, 35, 30, 30,
+        35, 35, 40, 50, 50, 40, 35, 35,
+        0,  0,  0,  0,  0,  0,  0,  0,
+]
+    KNIGHT_TABLE = [
+        -50,-40,-30,-30,-30,-30,-40,-50,
+        -40,-20,  0,  0,  0,  0,-20,-40,
+        -30,  0, 10, 15, 15, 10,  0,-30,
+        -30,  5, 15, 20, 20, 15,  5,-30,
+        -30,  0, 15, 20, 20, 15,  0,-30,
+        -30,  5, 10, 15, 15, 10,  5,-30,
+        -40,-20,  0,  5,  5,  0,-20,-40,
+        -50,-40,-30,-30,-30,-30,-40,-50
+    ]
+    BISHOP_TABLE = [
+        -20,-10,-10,-10,-10,-10,-10,-20,
+        -10,  5,  0,  0,  0,  0,  5,-10,
+        -10, 10, 10, 10, 10, 10, 10,-10,
+        -10,  0, 10, 10, 10, 10,  0,-10,
+        -10,  5,  5, 10, 10,  5,  5,-10,
+        -10,  0,  5, 10, 10,  5,  0,-10,
+        -10,  0,  0,  0,  0,  0,  0,-10,
+        -20,-10,-10,-10,-10,-10,-10,-20
+    ]
+    ROOK_TABLE = [
+        0,  0,  5, 10, 10,  5,  0,  0,
+        -5,  0,  0,  0,  0,  0,  0, -5,
+        -5,  0,  0,  0,  0,  0,  0, -5,
+        -5,  0,  0,  0,  0,  0,  0, -5,
+        -5,  0,  0,  0,  0,  0,  0, -5,
+        -5,  0,  0,  0,  0,  0,  0, -5,
+        5, 10, 10, 10, 10, 10, 10,  5,
+        0,  0,  0,  0,  0,  0,  0,  0
+    ]
+    QUEEN_TABLE = [
+        -20,-10,-10, -5, -5,-10,-10,-20,
+        -10,  0,  0,  0,  0,  0,  0,-10,
+        -10,  0,  5,  5,  5,  5,  0,-10,
+        -5,  0,  5,  5,  5,  5,  0, -5,
+        0,  0,  5,  5,  5,  5,  0, -5,
+        -10,  5,  5,  5,  5,  5,  0,-10,
+        -10,  0,  5,  0,  0,  0,  0,-10,
+        -20,-10,-10, -5, -5,-10,-10,-20
+    ]
+    KING_TABLE = [
+        20, 30, 10,  0,  0, 10, 30, 20,
+        20, 20,  0,  0,  0,  0, 20, 20,
+        -10,-20,-20,-20,-20,-20,-20,-10,
+        -20,-30,-30,-40,-40,-30,-30,-20,
+        -30,-40,-40,-50,-50,-40,-40,-30,
+        -30,-40,-40,-50,-50,-40,-40,-30,
+        -30,-40,-40,-50,-50,-40,-40,-30,
+        -30,-40,-40,-50,-50,-40,-40,-30
+]
+
+    PST = {
+        "P": PAWN_TABLE,
+        "N": KNIGHT_TABLE,
+        "B": BISHOP_TABLE,
+        "R": ROOK_TABLE,
+        "Q": QUEEN_TABLE,
+        "K": KING_TABLE,
+}
+
     def move_score(self, move):
         sq_from, sq_to = move
 
@@ -31,21 +105,90 @@ class Machine:
             score += 10 * abs(self.piece_values[target]) - abs(self.piece_values[attacker])
 
         return score
+    
+    def castling_rights_penalty(self):
+        pen = 0
+        cr = self.board.castling_rights
+
+        wk = self.board.wk
+        bk = self.board.bk
+
+        white_castled = wk & ((1 << 62) | (1 << 58))  # g1 or c1
+        black_castled = bk & ((1 << 6) | (1 << 2))    # g8 or c8
+
+        masks = {
+            0b1000: -15,  # white short
+            0b0100: -10,  # white long
+            0b0010: 15,   # black short
+            0b0001: 10    # black long
+        }
+
+        for mask, penalty in masks.items():
+            if not (cr & mask):
+                # only penalize missing rights if king didn't actually castle that side
+                if mask in (0b1000, 0b0100):  # white
+                    if not white_castled:
+                        pen += 2 * penalty
+                else:  # black
+                    if not black_castled:
+                        pen += 2 * penalty
+        return pen
+
+    
 
     def evaluate(self):
         eval = 0
+        eval += self.castling_rights_penalty()
         for sq in range(64):
             piece = self.board.get_piece(sq)
 
             if piece != ".":
                 eval += self.piece_values[piece]
+                if piece.isupper():
+                    eval += self.PST[piece][sq]
+                else:
+                    eval -= self.PST[piece.upper()][63 - sq]
+                #mobility 
+                #eval += mobility // 2
 
         return eval
+    
+    def quiescence(self, alpha, beta, maximizing):
+        board = self.board
+        stand_pat = self.evaluate()
+
+        # beta cutoff
+        if stand_pat >= beta:
+            return beta
+
+        # raise alpha
+        if stand_pat > alpha:
+            alpha = stand_pat
+
+        clr = maximizing
+
+        legal_moves = board.generate_legal_moves(clr)
+
+        for sq_from, sq_to in legal_moves:
+
+            if board.get_piece(sq_to) == ".":
+                continue
+
+            board.makeMove_sq(sq_from, sq_to)
+            eval = -self.quiescence(-beta, -alpha, not maximizing)
+            board.unmakeMove_sq(sq_from, sq_to)
+
+            if eval >= beta:
+                return beta
+            if eval > alpha:
+                alpha = eval
+
+        return alpha
     
     def alpha_beta(self, depth, alpha, beta, maximizing):
         board = self.board
         if depth == 0:
-            return self.evaluate()
+            return self.quiescence(alpha, beta, maximizing)
 
         clr = maximizing
         legal_moves = board.generate_legal_moves(clr)
