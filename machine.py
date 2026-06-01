@@ -4,6 +4,7 @@ class Machine:
 
     def __init__(self, board):
         self.board = board
+        self.tt = {}
 
     piece_values = {
         "P": 100,
@@ -148,45 +149,55 @@ class Machine:
                     eval += self.PST[piece][sq]
                 else:
                     eval -= self.PST[piece.upper()][63 - sq]
-                #mobility 
-                #eval += mobility // 2
 
         return eval
     
     def quiescence(self, alpha, beta, maximizing):
-        board = self.board
+
         stand_pat = self.evaluate()
 
-        # beta cutoff
-        if stand_pat >= beta:
-            return beta
-
-        # raise alpha
-        if stand_pat > alpha:
-            alpha = stand_pat
-
-        clr = maximizing
-
-        legal_moves = board.generate_legal_moves(clr)
+        if maximizing:
+            if stand_pat >= beta:
+                return beta
+            alpha = max(alpha, stand_pat)
+        else:
+            if stand_pat <= alpha:
+                return alpha
+            beta = min(beta, stand_pat)
+        legal_moves = self.board.generate_legal_moves(maximizing)
 
         for sq_from, sq_to in legal_moves:
-
-            if board.get_piece(sq_to) == ".":
+            if self.board.get_piece(sq_to) == ".":
                 continue
 
-            board.makeMove_sq(sq_from, sq_to)
-            eval = -self.quiescence(-beta, -alpha, not maximizing)
-            board.unmakeMove_sq(sq_from, sq_to)
+            self.board.makeMove_sq(sq_from, sq_to)
+            score = self.quiescence(alpha, beta, not maximizing)
+            self.board.unmakeMove_sq(sq_from, sq_to)
 
-            if eval >= beta:
-                return beta
-            if eval > alpha:
-                alpha = eval
-
-        return alpha
+            if maximizing:
+                alpha = max(alpha, score)
+                if alpha >= beta:
+                    return beta
+            else:
+                beta = min(beta, score)
+                if beta <= alpha:
+                    return alpha
+                
+        return alpha if maximizing else beta
     
     def alpha_beta(self, depth, alpha, beta, maximizing):
         board = self.board
+
+        key = board.hash
+
+        entry = self.tt.get(key)
+
+        if entry is not None:
+            stored_depth, stored_score = entry
+
+            if stored_depth >= depth:
+                return stored_score
+
         if depth == 0:
             return self.quiescence(alpha, beta, maximizing)
 
@@ -197,8 +208,12 @@ class Machine:
         # no legal moves
         if not legal_moves:
             if board.king_in_check(clr):
-                return -INF if clr else INF
-            return 0  # stalemate
+                eval = (-INF + depth) if maximizing else (INF - depth)
+            else:
+                eval = 0 #stalemate
+
+            self.tt[key] = (depth, eval)
+            return eval
         
         if maximizing:
 
@@ -215,6 +230,7 @@ class Machine:
                 if beta <= alpha:
                     break
 
+            self.tt[key] = (depth, max_eval)
             return max_eval
         else:
 
@@ -230,7 +246,8 @@ class Machine:
 
                 if beta <= alpha:
                     break
-
+            
+            self.tt[key] = (depth, min_eval)
             return min_eval
         
     def find_best_move(self, depth):

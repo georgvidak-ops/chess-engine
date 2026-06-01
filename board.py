@@ -1,3 +1,5 @@
+from zobrist import Zobrist
+
 class Board:
     def __init__(self):
         self.init_bitboards()
@@ -7,6 +9,8 @@ class Board:
         self.captured_piece = "."
         self.just_promoted = False
         self.move_stack = []
+        self.zobrist = Zobrist()
+        self.hash = self.zobrist.compute_hash(self)
 
     # -------------------------
     # INIT POSITION
@@ -509,7 +513,7 @@ class Board:
             if r1 == start_rank and sq_to == sq_from + 2 * direction:
                 mid = sq_from + direction
                 if not ((1 << mid) & occ) and not (target & occ):
-                    self.en_passant_square = mid
+                    #self.en_passant_square = mid
                     return True
 
         # capture
@@ -631,24 +635,44 @@ class Board:
         if piece == ".":
             return False
         
+        # remove old EP from hash
+        if self.en_passant_square:
+            self.hash ^= self.zobrist.ep_keys[self.en_passant_square % 8]
+
+        old_en_passant_square = self.en_passant_square
+
+        # update EP state
+        if piece.lower() == "p" and abs(sq_to - sq_from) == 16:
+            self.en_passant_square = (sq_from + sq_to) // 2
+        else:
+            self.en_passant_square = 0
+
+        # add new EP to hash
+        if self.en_passant_square:
+            self.hash ^= self.zobrist.ep_keys[self.en_passant_square % 8]
+
+        # remove old castling rights
+        self.hash ^= self.zobrist.castling_keys[self.castling_rights]
+        
         old_castling_rights = self.castling_rights
         self.castling_rights_modify(piece, sq_from)
+        # add new castling rights to hash
+        self.hash ^= self.zobrist.castling_keys[self.castling_rights]
 
         from_bit = 1 << sq_from
         to_bit = 1 << sq_to
 
         self.just_promoted = False
-        old_en_passant_square = self.en_passant_square
-
-        # en_passant_square reset
-        if not (abs(sq_from - sq_to) == 16 and piece.lower() == "p"): # double pawn push
-            self.en_passant_square = 0
 
         self.captured_piece = "."
         # capture removal
         for attr in ["wp","wn","wb","wr","wq","wk","bp","bn","bb","br","bq","bk"]:
             if getattr(self, attr) & to_bit:
                 self.captured_piece = attr
+                self.hash ^= self.zobrist.piece_keys[
+                    self.captured_piece[1] if self.captured_piece[0] == "b" # turns wp into P and bp into p etc.
+                    else self.captured_piece[1].upper()
+                ][sq_to]
                 setattr(self, attr, getattr(self, attr) & ~to_bit)
 
         # move piece
@@ -656,6 +680,9 @@ class Board:
             "P":"wp","N":"wn","B":"wb","R":"wr","Q":"wq","K":"wk",
             "p":"bp","n":"bn","b":"bb","r":"br","q":"bq","k":"bk"
         }
+
+        self.hash ^= self.zobrist.piece_keys[piece][sq_from]
+        self.hash ^= self.zobrist.piece_keys[piece][sq_to]
 
         bb = getattr(self, mapping[piece])
         bb &= ~from_bit
@@ -665,8 +692,11 @@ class Board:
         if piece.lower() == "p" and sq_to // 8 in (0,7):
             self.just_promoted = True
             self.promotion(sq_to, True)
+            self.hash ^= self.zobrist.piece_keys[piece][sq_to]
+            queen = "Q" if piece == "P" else "q"
+            self.hash ^= self.zobrist.piece_keys[queen][sq_to]
 
-        if castling: return True #when the rook move of castling takes place, dont save it in the stack
+        if castling: return True # when the rook move of castling takes place, dont save it in the stack
         self.white_to_move = not self.white_to_move
 
         # move stacking in memory
@@ -684,6 +714,7 @@ class Board:
             old_white_to_move_after,
         )
         self.move_stack.append(move_state)
+        self.hash ^= self.zobrist.side_key # update side-to-move hash key
         return True
     
     def unmakeMove_sq(self, sq_from, sq_to, castling=False):
@@ -712,8 +743,30 @@ class Board:
             "p":"bp","n":"bn","b":"bb","r":"br","q":"bq","k":"bk"
         }
 
+        self.hash ^= self.zobrist.side_key
+
+        self.hash ^= self.zobrist.piece_keys[moved_piece][sq_from]
+        self.hash ^= self.zobrist.piece_keys[moved_piece][sq_to]
+        if captured_piece != ".":
+            self.hash ^= self.zobrist.piece_keys[
+                        captured_piece[1] if captured_piece[0] == "b" # turns wp into P and bp into p etc.
+                        else captured_piece[1].upper()
+                    ][sq_to]
+        
+        self.hash ^= self.zobrist.castling_keys[self.castling_rights] # remove hashed rights of move
+        self.hash ^= self.zobrist.castling_keys[old_castling_rights] # hash rights before move
+
+        if self.en_passant_square:
+            self.hash ^= self.zobrist.ep_keys[self.en_passant_square % 8] # remove hashed ep square of move
+        if old_en_passant_square:
+            self.hash ^= self.zobrist.ep_keys[old_en_passant_square % 8] # hash ep square before move
+        
+
         # undo promotion
         if moved_piece.lower() == "p" and sq_to // 8 in (0,7) and promotion_happened:
+            queen = "Q" if moved_piece == "P" else "q"
+            self.hash ^= self.zobrist.piece_keys[queen][sq_to]
+            self.hash ^= self.zobrist.piece_keys[moved_piece][sq_to]
             self.promotion(sq_to, False)
 
         # move piece back

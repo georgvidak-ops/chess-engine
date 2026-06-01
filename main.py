@@ -1,5 +1,6 @@
 from board import Board
 from machine import Machine
+from zobrist import Zobrist
 
 def main():
     board = Board()
@@ -12,6 +13,15 @@ def main():
 
     while True:
         if board.white_to_move: # human vs ai
+            #for move in board.generate_legal_moves(board.white_to_move):
+                #h = board.hash
+                #board.makeMove_sq(*move)
+                #km = Zobrist().compute_hash(board)
+                #board.unmakeMove_sq(*move)
+                #if board.hash != h:
+                    #print("HASH BUG", move)
+                    #print("Difference: ", km ^ h)
+                    
 
             board.print_board()
             print("King is in check") if board.king_in_check(board.white_to_move) else print("King is Safe")
