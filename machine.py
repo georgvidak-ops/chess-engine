@@ -192,8 +192,10 @@ class Machine:
 
         entry = self.tt.get(key)
 
+        stored_move = None
+
         if entry is not None:
-            stored_depth, stored_score = entry
+            stored_depth, stored_score, stored_move = entry
 
             if stored_depth >= depth:
                 return stored_score
@@ -204,6 +206,12 @@ class Machine:
         clr = maximizing
         legal_moves = board.generate_legal_moves(clr)
         legal_moves.sort(key = self.move_score, reverse = True)
+
+        legal_moves.sort(key=self.move_score, reverse=True)
+
+        if stored_move in legal_moves:
+            legal_moves.remove(stored_move)
+            legal_moves.insert(0, stored_move)
 
         # no legal moves
         if not legal_moves:
@@ -218,36 +226,42 @@ class Machine:
         if maximizing:
 
             max_eval = -INF
+            best_move = None
             for sq_from, sq_to in legal_moves:
                 board.makeMove_sq(sq_from, sq_to)
 
                 eval = self.alpha_beta(depth - 1, alpha, beta, False)
                 board.unmakeMove_sq(sq_from, sq_to)
 
-                max_eval = max(max_eval, eval)
+                if eval > max_eval:
+                    max_eval = eval
+                    best_move = (sq_from, sq_to)
                 alpha = max(alpha, eval)
 
                 if beta <= alpha:
                     break
 
-            self.tt[key] = (depth, max_eval)
+            self.tt[key] = (depth, max_eval, best_move)
             return max_eval
         else:
 
             min_eval = INF
+            best_move = None
             for sq_from, sq_to in legal_moves:
                 board.makeMove_sq(sq_from, sq_to)
 
                 eval = self.alpha_beta(depth - 1, alpha, beta, True)
                 board.unmakeMove_sq(sq_from, sq_to)
 
-                min_eval = min(min_eval, eval)
+                if eval < min_eval:
+                    min_eval = eval
+                    best_move = (sq_from, sq_to)
                 beta = min(beta, eval)
 
                 if beta <= alpha:
                     break
             
-            self.tt[key] = (depth, min_eval)
+            self.tt[key] = (depth, min_eval, best_move)
             return min_eval
         
     def find_best_move(self, depth):
