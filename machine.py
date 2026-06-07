@@ -204,32 +204,27 @@ class Machine:
             return self.quiescence(alpha, beta, maximizing)
 
         clr = maximizing
-        legal_moves = board.generate_legal_moves(clr)
-        legal_moves.sort(key = self.move_score, reverse = True)
+        moves = board.generate_pseudo_moves(clr)
+        moves.sort(key = self.move_score, reverse = True)
 
-        legal_moves.sort(key=self.move_score, reverse=True)
-
-        if stored_move in legal_moves:
-            legal_moves.remove(stored_move)
-            legal_moves.insert(0, stored_move)
-
-        # no legal moves
-        if not legal_moves:
-            if board.king_in_check(clr):
-                eval = (-INF + depth) if maximizing else (INF - depth)
-            else:
-                eval = 0 #stalemate
-
-            self.tt[key] = (depth, eval)
-            return eval
+        if stored_move in moves:
+            moves.remove(stored_move)
+            moves.insert(0, stored_move)
+        
+        found_legal = False
         
         if maximizing:
 
             max_eval = -INF
             best_move = None
-            for sq_from, sq_to in legal_moves:
+            for sq_from, sq_to in moves:
                 board.makeMove_sq(sq_from, sq_to)
 
+                if board.king_in_check(clr):
+                    board.unmakeMove_sq(sq_from, sq_to)
+                    continue
+
+                found_legal = True
                 eval = self.alpha_beta(depth - 1, alpha, beta, False)
                 board.unmakeMove_sq(sq_from, sq_to)
 
@@ -241,15 +236,30 @@ class Machine:
                 if beta <= alpha:
                     break
 
+            # no legal moves
+            if not found_legal:
+                if board.king_in_check(clr):
+                    eval = (-INF + depth) if maximizing else (INF - depth)
+                else:
+                    eval = 0 #stalemate
+
+                self.tt[key] = (depth, eval, None)
+                return eval
+
             self.tt[key] = (depth, max_eval, best_move)
             return max_eval
         else:
 
             min_eval = INF
             best_move = None
-            for sq_from, sq_to in legal_moves:
+            for sq_from, sq_to in moves:
                 board.makeMove_sq(sq_from, sq_to)
 
+                if board.king_in_check(clr):
+                    board.unmakeMove_sq(sq_from, sq_to)
+                    continue
+
+                found_legal = True
                 eval = self.alpha_beta(depth - 1, alpha, beta, True)
                 board.unmakeMove_sq(sq_from, sq_to)
 
@@ -260,6 +270,16 @@ class Machine:
 
                 if beta <= alpha:
                     break
+
+            # no legal moves
+            if not found_legal:
+                if board.king_in_check(clr):
+                    eval = (-INF + depth) if maximizing else (INF - depth)
+                else:
+                    eval = 0 #stalemate
+
+                self.tt[key] = (depth, eval, None)
+                return eval
             
             self.tt[key] = (depth, min_eval, best_move)
             return min_eval
@@ -269,12 +289,16 @@ class Machine:
         best_move = None
         best_eval = -INF if board.white_to_move else INF
 
-        legal_moves = board.generate_legal_moves(board.white_to_move)
-        print(len(legal_moves))
+        moves = board.generate_pseudo_moves(board.white_to_move)
+        print(len(moves))
 
-        for sq_from, sq_to in legal_moves:
+        for sq_from, sq_to in moves:
 
             board.makeMove_sq(sq_from, sq_to)
+            if board.king_in_check(not board.white_to_move): #disregard non-legal moves
+                board.unmakeMove_sq(sq_from, sq_to)
+                continue
+
             eval = self.alpha_beta(depth - 1, -INF, INF, board.white_to_move)
 
             board.unmakeMove_sq(sq_from, sq_to)

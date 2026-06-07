@@ -413,8 +413,8 @@ class Board:
 
         return moves & 0xFFFFFFFFFFFFFFFF
     
-    def legal_move_castling(self, clr):
-        legal_castles = []
+    def pseudo_move_castling(self, clr):
+        pseudo_castles = []
         from_sq = 60 if clr else 4 # king square based on colour
         to_sq_short = 62 if clr else 6
         to_sq_long = 58 if clr else 2
@@ -434,13 +434,66 @@ class Board:
         mask_s = 0b1000 if clr else 0b0010
         mask_l = 0b0100 if clr else 0b0001
 
-        if can_s and self.castling_rights & mask_s:
-            legal_castles.append((from_sq, to_sq_short))
-        if can_l and self.castling_rights & mask_l:
-            legal_castles.append((from_sq, to_sq_long))
+        if can_s and self.castling_rights & mask_s and not self.king_in_check(clr):
+            pseudo_castles.append((from_sq, to_sq_short))
+        if can_l and self.castling_rights & mask_l and not self.king_in_check(clr):
+            pseudo_castles.append((from_sq, to_sq_long))
+
+        return pseudo_castles
+    
+    def legal_move_castling(self, clr):
+        pseudo_castles = self.pseudo_move_castling(clr)
+        legal_castles = []
+
+        for sq_from, sq_to in pseudo_castles:
+            self.makeMove_sq(sq_from, sq_to, castleLegalityChecking=True)
+            
+            if not self.king_in_check(clr):
+                legal_castles.append((sq_from, sq_to))
+
+            self.unmakeMove_sq(sq_from, sq_to, castleLegalityChecking=True)
 
         return legal_castles
 
+    
+    def generate_pseudo_moves(self, clr):
+        pseudo_moves = []
+        own = self.white if clr else self.black
+        enemy = self.black if clr else self.white
+
+        pieces = ["wp","wn","wb","wr","wq","wk"] if clr else ["bp","bn","bb","br","bq","bk"]
+
+        for piece in pieces:
+            bb = getattr(self, piece)
+
+            while bb:
+                from_bit = bb & -bb
+                from_sq = from_bit.bit_length() - 1
+                bb &= bb - 1  # remove LSB
+
+                # generate pseudo-legal targets for this square
+                if piece == "wp" or piece == "bp":
+                    moves = self.pawn_moves(from_sq, clr)
+                elif piece == "wn" or piece == "bn":
+                    moves = self.knight_attacks(from_sq, clr) & ~own
+                elif piece == "wb" or piece == "bb":
+                    moves = self.bishop_moves(from_sq, own, enemy, False)
+                elif piece == "wr" or piece == "br":
+                    moves = self.rook_moves(from_sq, own, enemy, False)
+                elif piece == "wq" or piece == "bq":
+                    moves = self.queen_moves(from_sq, own, enemy, False)
+                else:  # king
+                    moves = self.king_attacks(clr) & ~own
+
+                # iterate targets
+                while moves:
+                    to_bit = moves & -moves
+                    to_sq = to_bit.bit_length() - 1
+                    moves &= moves - 1
+
+                    pseudo_moves.append((from_sq, to_sq))
+
+        return pseudo_moves + self.pseudo_move_castling(clr)
     
     def generate_legal_moves(self, clr):
         legal_moves = []
@@ -470,6 +523,10 @@ class Board:
                     moves = self.queen_moves(from_sq, own, enemy, False)
                 else:  # king
                     moves = self.king_attacks(clr) & ~own
+                    
+
+        # Had to repeat pseudo-legal generation because from_sq couldnt be passed as arguement without causing too much chaos
+
 
                 # iterate targets
                 while moves:
@@ -611,7 +668,7 @@ class Board:
 
         from_sq, to_sq = r
         if not making:
-            self.unmakeMove_sq(to_sq, from_sq, True)
+            self.unmakeMove_sq(from_sq, to_sq, True)
             return True
         if (sq_from, sq_to) in self.legal_move_castling(clr):
             if making:
@@ -626,10 +683,11 @@ class Board:
     # MAKE MOVE
     # -------------------------
 
-    def makeMove_sq(self, sq_from, sq_to, castling=False):
+    def makeMove_sq(self, sq_from, sq_to, castling=False, castleLegalityChecking=False):
         piece = self.get_piece(sq_from)
         old_en_passant_square = 0
-        if abs(sq_to - sq_from) == 2 and piece.lower() == "k":
+        if abs(sq_to - sq_from) == 2 and piece.lower() == "k" and not castleLegalityChecking:
+            print("castle")
             if not self.castle(sq_from, sq_to, True): print("Idiot")
            
         if piece == ".":
@@ -717,7 +775,7 @@ class Board:
         self.hash ^= self.zobrist.side_key # update side-to-move hash key
         return True
     
-    def unmakeMove_sq(self, sq_from, sq_to, castling=False):
+    def unmakeMove_sq(self, sq_from, sq_to, castling=False, castleLegalityChecking=False):
         moved_piece, old_en_passant_square, old_castling_rights, promotion_happened, old_white_to_move_after = (0,0,0,0,0)
         captured_piece = "."
         # restore saved move state
@@ -733,7 +791,7 @@ class Board:
         else:
             moved_piece = self.get_piece(sq_to)
 
-        if abs(sq_to - sq_from) == 2 and moved_piece.lower() == "k":
+        if abs(sq_to - sq_from) == 2 and moved_piece.lower() == "k" and not castleLegalityChecking:
             self.castle(sq_from, sq_to, False)
         from_bit = 1 << sq_from
         to_bit = 1 << sq_to
