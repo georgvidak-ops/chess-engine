@@ -14,11 +14,11 @@ def main():
         if board.white_to_move: # human vs ai
 
             board.print_board()
-            print("King is in check") if board.king_in_check(board.white_to_move) else print("King is Safe")
+            print("King is in check") if board.is_king_attacked(board.white_to_move) else print("King is Safe")
             moves = len(board.generate_legal_moves(board.white_to_move))
             print("Legal moves:", moves)
             if moves == 0:
-                if board.king_in_check(board.white_to_move):
+                if board.is_king_attacked(board.white_to_move):
                     print("Checkmate!")
                     break
                 else:
@@ -26,7 +26,7 @@ def main():
                     break
 
             def avoid_check(sq_from, sq_to, clr):
-                if board.king_in_check(clr):
+                if board.is_king_attacked(clr):
                     board.unmakeMove_sq(sq_from, sq_to)
                     print("Invalid move, king will be captured")
                     return True

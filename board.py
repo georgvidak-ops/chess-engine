@@ -111,7 +111,7 @@ class Board:
     # BISHOP
     # -------------------------
 
-    def bishop_moves(self, sq, own, enemy, raycasts):
+    def bishop_moves(self, sq, own, enemy, raycasts): # raycasts = True tells the programme to not count any object it hit whether its own or enemy piece
         moves = 0
         occupied = own | enemy
         for d in [9, 7, -7, -9]:
@@ -153,7 +153,7 @@ class Board:
     # -------------------------
     # ROOK
     # -------------------------
-    def rook_moves(self, sq, own, enemy, raycasts):
+    def rook_moves(self, sq, own, enemy, raycasts): # raycasts = True tells the programme to not count any object it hit whether its own or enemy piece
         moves = 0
         occupied = own | enemy
         #veritcal check
@@ -222,7 +222,7 @@ class Board:
     # QUEEN
     # -------------------------
     
-    def queen_moves(self, sq, own, enemy, raycasts):
+    def queen_moves(self, sq, own, enemy, raycasts): # raycasts = True tells the programme to not count any object it hit whether its own or enemy piece
         return self.rook_moves(sq, own, enemy, raycasts) | self.bishop_moves(sq, own, enemy, raycasts)
 
     def QueenValidity(self, sq_from, sq_to, clr):
@@ -342,7 +342,7 @@ class Board:
             attacks |= self.queen_moves(i, own, enemy, True)
         return attacks
     
-    def king_attacks(self, clr):
+    def king_attacker(self, clr):
         king = self.wk if clr else self.bk
         NOT_A_FILE  = 0xfefefefefefefefe
         NOT_H_FILE  = 0x7f7f7f7f7f7f7f7f
@@ -360,11 +360,62 @@ class Board:
 
         return attacks & 0xFFFFFFFFFFFFFFFF #64 bit masking
 
+    def pawn_attackers(self, sq, clr): #clr of the attacker
+        target = 1 << sq
 
-    def king_in_check(self, clr):
-        enemy_attack_board = self.pawn_attacks(None, not clr) | self.knight_attacks(None, not clr) | self.bishop_attacks(None, not clr) | self.rook_attacks(None, not clr) | self.queen_attacks(None, not clr) | self.king_attacks(not clr)
-        king = self.wk if clr else self.bk
-        if king & enemy_attack_board:
+        NOT_A_FILE = 0x7f7f7f7f7f7f7f7f
+        NOT_H_FILE = 0xfefefefefefefefe
+
+        if clr:
+            # White pawns attack upwards, so reverse the attack.
+            return ((target << 7) & NOT_H_FILE) | ((target << 9) & NOT_A_FILE)
+        else:
+            # Black pawns attack downwards.
+            return ((target >> 7) & NOT_A_FILE) | ((target >> 9) & NOT_H_FILE)
+
+    def knight_attackers(self, sq):
+        knight = 1 << sq
+
+        NOT_A_FILE  = 0xfefefefefefefefe
+        NOT_H_FILE  = 0x7f7f7f7f7f7f7f7f
+        NOT_AB_FILE = 0xfcfcfcfcfcfcfcfc
+        NOT_GH_FILE = 0x3f3f3f3f3f3f3f3f
+
+        attacks = 0
+
+        attacks |= (knight & NOT_H_FILE)  << 17
+        attacks |= (knight & NOT_A_FILE)  << 15
+        attacks |= (knight & NOT_GH_FILE) << 10
+        attacks |= (knight & NOT_AB_FILE) << 6
+
+        attacks |= (knight & NOT_H_FILE)  >> 15
+        attacks |= (knight & NOT_A_FILE)  >> 17
+        attacks |= (knight & NOT_GH_FILE) >> 6
+        attacks |= (knight & NOT_AB_FILE) >> 10
+
+        return attacks & 0xFFFFFFFFFFFFFFFF
+
+    def is_king_attacked(self, clr):
+        own = self.white if clr else self.black
+        enemy = self.black if clr else self.white
+        own_king = self.wk if clr else self.bk
+        knights = self.bn if clr else self.wn
+        pawns = self.bp if clr else self.wp
+        rooks = self.br if clr else self.wr
+        queens = self.bq if clr else self.wq
+        bishops = self.bb if clr else self.wb
+
+        king_sq = own_king.bit_length() - 1
+
+        if self.knight_attackers(king_sq) & knights:
+            return True
+        if self.king_attacker(clr) & own_king:
+            return True
+        if self.pawn_attackers(king_sq, not clr) & pawns:
+            return True
+        if self.rook_moves(king_sq, own, enemy, False) & (rooks | queens):
+            return True
+        if self.bishop_moves(king_sq, own, enemy, False) & (bishops | queens):
             return True
         return False
     
@@ -415,28 +466,40 @@ class Board:
     
     def pseudo_move_castling(self, clr):
         pseudo_castles = []
-        from_sq = 60 if clr else 4 # king square based on colour
+
+        from_sq = 60 if clr else 4
         to_sq_short = 62 if clr else 6
-        to_sq_long = 58 if clr else 2
+        to_sq_long  = 58 if clr else 2
 
         pieces_short = [61, 62] if clr else [5, 6]
-        pieces_long = [57, 58, 59] if clr else [1, 2, 3]
+        pieces_long  = [57, 58, 59] if clr else [1, 2, 3]
 
-        can_s = True # ability to castle short based solely on occupied squares
-        can_l = True # ability to castle long based solely on occupied squares
-        for piece in pieces_short:
-            if (1 << piece) & self.occupied:
-                can_s = False
-        for piece in pieces_long:
-            if (1 << piece) & self.occupied:
-                can_l = False
+        can_s = all(not ((1 << sq) & self.occupied) for sq in pieces_short)
+        can_l = all(not ((1 << sq) & self.occupied) for sq in pieces_long)
 
         mask_s = 0b1000 if clr else 0b0010
         mask_l = 0b0100 if clr else 0b0001
 
-        if can_s and self.castling_rights & mask_s and not self.king_in_check(clr):
+        enemy_attacks = (
+            self.pawn_attacks(None, not clr)
+            | self.knight_attacks(None, not clr)
+            | self.bishop_attacks(None, not clr)
+            | self.rook_attacks(None, not clr)
+            | self.queen_attacks(None, not clr)
+            | self.king_attacker(not clr)
+        )
+
+        if clr:
+            safe_short = not (enemy_attacks & ((1 << 60) | (1 << 61) | (1 << 62)))
+            safe_long  = not (enemy_attacks & ((1 << 60) | (1 << 59) | (1 << 58)))
+        else:
+            safe_short = not (enemy_attacks & ((1 << 4) | (1 << 5) | (1 << 6)))
+            safe_long  = not (enemy_attacks & ((1 << 4) | (1 << 3) | (1 << 2)))
+
+        if can_s and (self.castling_rights & mask_s) and safe_short:
             pseudo_castles.append((from_sq, to_sq_short))
-        if can_l and self.castling_rights & mask_l and not self.king_in_check(clr):
+
+        if can_l and (self.castling_rights & mask_l) and safe_long:
             pseudo_castles.append((from_sq, to_sq_long))
 
         return pseudo_castles
@@ -448,7 +511,7 @@ class Board:
         for sq_from, sq_to in pseudo_castles:
             self.makeMove_sq(sq_from, sq_to, castleLegalityChecking=True)
             
-            if not self.king_in_check(clr):
+            if not self.is_king_attacked(clr):
                 legal_castles.append((sq_from, sq_to))
 
             self.unmakeMove_sq(sq_from, sq_to, castleLegalityChecking=True)
@@ -483,7 +546,7 @@ class Board:
                 elif piece == "wq" or piece == "bq":
                     moves = self.queen_moves(from_sq, own, enemy, False)
                 else:  # king
-                    moves = self.king_attacks(clr) & ~own
+                    moves = self.king_attacker(clr) & ~own
 
                 # iterate targets
                 while moves:
@@ -522,7 +585,7 @@ class Board:
                 elif piece == "wq" or piece == "bq":
                     moves = self.queen_moves(from_sq, own, enemy, False)
                 else:  # king
-                    moves = self.king_attacks(clr) & ~own
+                    moves = self.king_attacker(clr) & ~own
                     
 
         # Had to repeat pseudo-legal generation because from_sq couldnt be passed as arguement without causing too much chaos
@@ -538,7 +601,7 @@ class Board:
                     self.makeMove_sq(from_sq, to_sq)
 
                     # legality check
-                    if not self.king_in_check(clr):
+                    if not self.is_king_attacked(clr):
                         legal_moves.append((from_sq, to_sq))
 
                     # undo move
@@ -667,16 +730,7 @@ class Board:
             r = self.parse("a8d8") if making else self.parse("d8a8")
 
         from_sq, to_sq = r
-        if not making:
-            self.unmakeMove_sq(from_sq, to_sq, True)
-            return True
-        if (sq_from, sq_to) in self.legal_move_castling(clr):
-            if making:
-                self.makeMove_sq(from_sq, to_sq, True)
-            return True
-        else:
-            print("Cant castle")
-            return False
+        return from_sq, to_sq
 
 
     # -------------------------
@@ -685,13 +739,29 @@ class Board:
 
     def makeMove_sq(self, sq_from, sq_to, castling=False, castleLegalityChecking=False):
         piece = self.get_piece(sq_from)
+        mapping = {
+                    "P":"wp","N":"wn","B":"wb","R":"wr","Q":"wq","K":"wk",
+                    "p":"bp","n":"bn","b":"bb","r":"br","q":"bq","k":"bk"
+                }
         old_en_passant_square = 0
-        if abs(sq_to - sq_from) == 2 and piece.lower() == "k" and not castleLegalityChecking:
-            print("castle")
-            if not self.castle(sq_from, sq_to, True): print("Idiot")
-           
+
         if piece == ".":
             return False
+        
+        if abs(sq_to - sq_from) == 2 and piece.lower() == "k" and not castleLegalityChecking:
+            r_piece = "r" if piece == "k" else "R"
+            # setting variables
+            sq_from_rook, sq_to_rook = self.castle(sq_from, sq_to, True)
+            to_bit = 1 << sq_to_rook
+            from_bit = 1 << sq_from_rook
+            # moving rook
+            bb = getattr(self, mapping[r_piece])
+            bb &= ~from_bit
+            bb |= to_bit
+            setattr(self, mapping[r_piece], bb)
+
+            self.hash ^= self.zobrist.piece_keys[r_piece][sq_from_rook]
+            self.hash ^= self.zobrist.piece_keys[r_piece][sq_to_rook]
         
         # remove old EP from hash
         if self.en_passant_square:
@@ -734,10 +804,6 @@ class Board:
                 setattr(self, attr, getattr(self, attr) & ~to_bit)
 
         # move piece
-        mapping = {
-            "P":"wp","N":"wn","B":"wb","R":"wr","Q":"wq","K":"wk",
-            "p":"bp","n":"bn","b":"bb","r":"br","q":"bq","k":"bk"
-        }
 
         self.hash ^= self.zobrist.piece_keys[piece][sq_from]
         self.hash ^= self.zobrist.piece_keys[piece][sq_to]
@@ -778,6 +844,10 @@ class Board:
     def unmakeMove_sq(self, sq_from, sq_to, castling=False, castleLegalityChecking=False):
         moved_piece, old_en_passant_square, old_castling_rights, promotion_happened, old_white_to_move_after = (0,0,0,0,0)
         captured_piece = "."
+        mapping = {
+            "P":"wp","N":"wn","B":"wb","R":"wr","Q":"wq","K":"wk",
+            "p":"bp","n":"bn","b":"bb","r":"br","q":"bq","k":"bk"
+        }
         # restore saved move state
         if not castling:
             (
@@ -792,14 +862,22 @@ class Board:
             moved_piece = self.get_piece(sq_to)
 
         if abs(sq_to - sq_from) == 2 and moved_piece.lower() == "k" and not castleLegalityChecking:
-            self.castle(sq_from, sq_to, False)
+            r_piece = "r" if moved_piece == "k" else "R"
+            # setting variables
+            sq_from_rook, sq_to_rook = self.castle(sq_from, sq_to, False)
+            to_bit = 1 << sq_to_rook
+            from_bit = 1 << sq_from_rook
+            # moving rook
+            bb = getattr(self, mapping[r_piece])
+            bb &= ~from_bit
+            bb |= to_bit
+            setattr(self, mapping[r_piece], bb)
+
+            self.hash ^= self.zobrist.piece_keys[r_piece][sq_from_rook]
+            self.hash ^= self.zobrist.piece_keys[r_piece][sq_to_rook]
+
         from_bit = 1 << sq_from
         to_bit = 1 << sq_to
-
-        mapping = {
-            "P":"wp","N":"wn","B":"wb","R":"wr","Q":"wq","K":"wk",
-            "p":"bp","n":"bn","b":"bb","r":"br","q":"bq","k":"bk"
-        }
 
         self.hash ^= self.zobrist.side_key
 

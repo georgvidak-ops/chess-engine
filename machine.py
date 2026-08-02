@@ -220,7 +220,7 @@ class Machine:
             for sq_from, sq_to in moves:
                 board.makeMove_sq(sq_from, sq_to)
 
-                if board.king_in_check(clr):
+                if board.is_king_attacked(clr):
                     board.unmakeMove_sq(sq_from, sq_to)
                     continue
 
@@ -238,7 +238,7 @@ class Machine:
 
             # no legal moves
             if not found_legal:
-                if board.king_in_check(clr):
+                if board.is_king_attacked(clr):
                     eval = (-INF + depth) if maximizing else (INF - depth)
                 else:
                     eval = 0 #stalemate
@@ -255,7 +255,7 @@ class Machine:
             for sq_from, sq_to in moves:
                 board.makeMove_sq(sq_from, sq_to)
 
-                if board.king_in_check(clr):
+                if board.is_king_attacked(clr):
                     board.unmakeMove_sq(sq_from, sq_to)
                     continue
 
@@ -273,7 +273,7 @@ class Machine:
 
             # no legal moves
             if not found_legal:
-                if board.king_in_check(clr):
+                if board.is_king_attacked(clr):
                     eval = (-INF + depth) if maximizing else (INF - depth)
                 else:
                     eval = 0 #stalemate
@@ -295,7 +295,7 @@ class Machine:
         for sq_from, sq_to in moves:
 
             board.makeMove_sq(sq_from, sq_to)
-            if board.king_in_check(not board.white_to_move): #disregard non-legal moves
+            if board.is_king_attacked(not board.white_to_move): #disregard non-legal moves
                 board.unmakeMove_sq(sq_from, sq_to)
                 continue
 
