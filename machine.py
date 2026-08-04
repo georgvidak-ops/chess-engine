@@ -4,6 +4,7 @@ class Machine:
 
     def __init__(self, board):
         self.board = board
+        self.nodes = 0
         self.tt = {}
 
     piece_values = {
@@ -101,6 +102,9 @@ class Machine:
         attacker = self.board.get_piece(sq_from)
         target = self.board.get_piece(sq_to)
 
+        if attacker == ".":
+            print(self.board.board_array)
+            print(attacker)
         score = 0
         if target != ".":
             score += 10 * abs(self.piece_values[target]) - abs(self.piece_values[attacker])
@@ -170,9 +174,18 @@ class Machine:
             if self.board.get_piece(sq_to) == ".":
                 continue
 
+            before = self.board.board_array.copy()
+
             self.board.makeMove_sq(sq_from, sq_to)
             score = self.quiescence(alpha, beta, not maximizing)
             self.board.unmakeMove_sq(sq_from, sq_to)
+
+            if before != self.board.board_array:
+                print("Broken move:", sq_from, sq_to)
+                for i in range(64):
+                    if before[i] != self.board.board_array[i]:
+                        print(i, before[i], "->", self.board.board_array[i])
+                raise Exception("Board corruption")
 
             if maximizing:
                 alpha = max(alpha, score)
@@ -187,6 +200,8 @@ class Machine:
     
     def alpha_beta(self, depth, alpha, beta, maximizing):
         board = self.board
+
+        self.nodes += 1
 
         key = board.hash
 
@@ -218,15 +233,22 @@ class Machine:
             max_eval = -INF
             best_move = None
             for sq_from, sq_to in moves:
+                before = self.board.board_array.copy()
                 board.makeMove_sq(sq_from, sq_to)
 
                 if board.is_king_attacked(clr):
                     board.unmakeMove_sq(sq_from, sq_to)
                     continue
-
+                
                 found_legal = True
                 eval = self.alpha_beta(depth - 1, alpha, beta, False)
                 board.unmakeMove_sq(sq_from, sq_to)
+                if before != self.board.board_array:
+                    print("Broken move:", sq_from, sq_to)
+                    for i in range(64):
+                        if before[i] != self.board.board_array[i]:
+                            print(i, before[i], "->", self.board.board_array[i])
+                    raise Exception("Board corruption")
 
                 if eval > max_eval:
                     max_eval = eval
@@ -253,6 +275,7 @@ class Machine:
             min_eval = INF
             best_move = None
             for sq_from, sq_to in moves:
+                before = self.board.board_array.copy()
                 board.makeMove_sq(sq_from, sq_to)
 
                 if board.is_king_attacked(clr):
@@ -262,7 +285,12 @@ class Machine:
                 found_legal = True
                 eval = self.alpha_beta(depth - 1, alpha, beta, True)
                 board.unmakeMove_sq(sq_from, sq_to)
-
+                if before != self.board.board_array:
+                    print("Broken move:", sq_from, sq_to)
+                    for i in range(64):
+                        if before[i] != self.board.board_array[i]:
+                            print(i, before[i], "->", self.board.board_array[i])
+                    raise Exception("Board corruption")
                 if eval < min_eval:
                     min_eval = eval
                     best_move = (sq_from, sq_to)
@@ -293,7 +321,7 @@ class Machine:
         print(len(moves))
 
         for sq_from, sq_to in moves:
-
+            before = self.board.board_array.copy()
             board.makeMove_sq(sq_from, sq_to)
             if board.is_king_attacked(not board.white_to_move): #disregard non-legal moves
                 board.unmakeMove_sq(sq_from, sq_to)
@@ -302,7 +330,12 @@ class Machine:
             eval = self.alpha_beta(depth - 1, -INF, INF, board.white_to_move)
 
             board.unmakeMove_sq(sq_from, sq_to)
-
+            if before != self.board.board_array:
+                print("Broken move:", sq_from, sq_to)
+                for i in range(64):
+                    if before[i] != self.board.board_array[i]:
+                        print(i, before[i], "->", self.board.board_array[i])
+                raise Exception("Board corruption")
             if board.white_to_move:
                 if eval > best_eval:
                     best_eval = eval
@@ -313,4 +346,5 @@ class Machine:
                     best_eval = eval
                     best_move = (sq_from, sq_to)
         print(best_move)
+        print("nodes: ", self.nodes)
         return best_move

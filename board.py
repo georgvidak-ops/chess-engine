@@ -9,8 +9,29 @@ class Board:
         self.captured_piece = "."
         self.just_promoted = False
         self.move_stack = []
+
+        self.board_array = ["."] * 64
+
+        for sq in range(64):
+            bit = 1 << sq
+
+            if self.wp & bit: self.board_array[sq] = "P"
+            elif self.wn & bit: self.board_array[sq] = "N"
+            elif self.wb & bit: self.board_array[sq] = "B"
+            elif self.wr & bit: self.board_array[sq] = "R"
+            elif self.wq & bit: self.board_array[sq] = "Q"
+            elif self.wk & bit: self.board_array[sq] = "K"
+            elif self.bp & bit: self.board_array[sq] = "p"
+            elif self.bn & bit: self.board_array[sq] = "n"
+            elif self.bb & bit: self.board_array[sq] = "b"
+            elif self.br & bit: self.board_array[sq] = "r"
+            elif self.bq & bit: self.board_array[sq] = "q"
+            elif self.bk & bit: self.board_array[sq] = "k"
+        
         self.zobrist = Zobrist()
         self.hash = self.zobrist.compute_hash(self)
+
+        
 
     # -------------------------
     # INIT POSITION
@@ -55,20 +76,8 @@ class Board:
     # -------------------------
 
     def get_piece(self, sq):
-        bit = 1 << sq
-
-        pieces = {
-            "P": self.wp, "N": self.wn, "B": self.wb,
-            "R": self.wr, "Q": self.wq, "K": self.wk,
-            "p": self.bp, "n": self.bn, "b": self.bb,
-            "r": self.br, "q": self.bq, "k": self.bk,
-        }
-
-        for p, bb in pieces.items():
-            if bb & bit:
-                return p
-        return "."
-    
+        return self.board_array[sq]
+        
     def extract_squares(self, bb):
         squares = []
 
@@ -92,6 +101,17 @@ class Board:
 
         return from_sq, to_sq
 
+    def translate(self, str):
+        if str == ".": return str
+
+        lets = ["p", "n", "b", "r", "q", "k", "P", "N", "B","R", "Q", "K"]
+        idxs = ["bp", "bn", "bb", "br", "bq", "bk", "wp", "wn", "wb", "wr", "wq", "wk"]
+
+        if str in idxs:
+            return lets[idxs.index(str)]
+        if str in lets:
+            return idxs[lets.index(str)]
+
     # -------------------------
     # KNIGHT
     # -------------------------
@@ -113,7 +133,7 @@ class Board:
 
     def bishop_moves(self, sq, own, enemy, raycasts): # raycasts = True tells the programme to not count any object it hit whether its own or enemy piece
         moves = 0
-        occupied = own | enemy
+        occupied = self.occupied
         for d in [9, 7, -7, -9]:
             s = sq
 
@@ -155,7 +175,7 @@ class Board:
     # -------------------------
     def rook_moves(self, sq, own, enemy, raycasts): # raycasts = True tells the programme to not count any object it hit whether its own or enemy piece
         moves = 0
-        occupied = own | enemy
+        occupied = self.occupied
         #veritcal check
         for d in [8, -8]:
             s = sq
@@ -747,7 +767,8 @@ class Board:
 
         if piece == ".":
             return False
-        
+
+        # castling
         if abs(sq_to - sq_from) == 2 and piece.lower() == "k" and not castleLegalityChecking:
             r_piece = "r" if piece == "k" else "R"
             # setting variables
@@ -762,6 +783,10 @@ class Board:
 
             self.hash ^= self.zobrist.piece_keys[r_piece][sq_from_rook]
             self.hash ^= self.zobrist.piece_keys[r_piece][sq_to_rook]
+
+            # array board update
+            self.board_array[sq_to_rook] = self.board_array[sq_from_rook]
+            self.board_array[sq_from_rook] = "."
         
         # remove old EP from hash
         if self.en_passant_square:
@@ -792,6 +817,10 @@ class Board:
 
         self.just_promoted = False
 
+        # array board update
+        self.board_array[sq_to] = self.board_array[sq_from]
+        self.board_array[sq_from] = "."
+
         self.captured_piece = "."
         # capture removal
         for attr in ["wp","wn","wb","wr","wq","wk","bp","bn","bb","br","bq","bk"]:
@@ -813,12 +842,19 @@ class Board:
         bb |= to_bit
         setattr(self, mapping[piece], bb)
 
+        # promotion
         if piece.lower() == "p" and sq_to // 8 in (0,7):
             self.just_promoted = True
             self.promotion(sq_to, True)
             self.hash ^= self.zobrist.piece_keys[piece][sq_to]
             queen = "Q" if piece == "P" else "q"
             self.hash ^= self.zobrist.piece_keys[queen][sq_to]
+
+            # array board update
+            if piece == "P":
+                self.board_array[sq_to] = "Q"
+            else:
+                self.board_array[sq_to] = "q"
 
         if castling: return True # when the rook move of castling takes place, dont save it in the stack
         self.white_to_move = not self.white_to_move
@@ -841,7 +877,7 @@ class Board:
         self.hash ^= self.zobrist.side_key # update side-to-move hash key
         return True
     
-    def unmakeMove_sq(self, sq_from, sq_to, castling=False, castleLegalityChecking=False):
+    def unmakeMove_sq(self, sq_from, sq_to, castling=False, castleLegalityChecking=False): # sq_from and #sq_to refer to the original move's sq_from and sq_to
         moved_piece, old_en_passant_square, old_castling_rights, promotion_happened, old_white_to_move_after = (0,0,0,0,0)
         captured_piece = "."
         mapping = {
@@ -861,6 +897,7 @@ class Board:
         else:
             moved_piece = self.get_piece(sq_to)
 
+        # restoring castle
         if abs(sq_to - sq_from) == 2 and moved_piece.lower() == "k" and not castleLegalityChecking:
             r_piece = "r" if moved_piece == "k" else "R"
             # setting variables
@@ -876,6 +913,15 @@ class Board:
             self.hash ^= self.zobrist.piece_keys[r_piece][sq_from_rook]
             self.hash ^= self.zobrist.piece_keys[r_piece][sq_to_rook]
 
+            # array board update
+            self.board_array[sq_to_rook] = self.board_array[sq_from_rook]
+            self.board_array[sq_from_rook] = "."
+
+        
+        # array board update
+        self.board_array[sq_from] = moved_piece
+        self.board_array[sq_to] = self.translate(captured_piece)
+
         from_bit = 1 << sq_from
         to_bit = 1 << sq_to
 
@@ -884,10 +930,7 @@ class Board:
         self.hash ^= self.zobrist.piece_keys[moved_piece][sq_from]
         self.hash ^= self.zobrist.piece_keys[moved_piece][sq_to]
         if captured_piece != ".":
-            self.hash ^= self.zobrist.piece_keys[
-                        captured_piece[1] if captured_piece[0] == "b" # turns wp into P and bp into p etc.
-                        else captured_piece[1].upper()
-                    ][sq_to]
+            self.hash ^= self.zobrist.piece_keys[self.translate(captured_piece)][sq_to]
         
         self.hash ^= self.zobrist.castling_keys[self.castling_rights] # remove hashed rights of move
         self.hash ^= self.zobrist.castling_keys[old_castling_rights] # hash rights before move
