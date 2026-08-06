@@ -1,4 +1,10 @@
+import time
+
 INF = 999999
+
+EXACT = 0
+LOWERBOUND = 1
+UPPERBOUND = 2
 
 class Machine:
 
@@ -101,10 +107,7 @@ class Machine:
 
         attacker = self.board.get_piece(sq_from)
         target = self.board.get_piece(sq_to)
-
-        if attacker == ".":
-            print(self.board.board_array)
-            print(attacker)
+        
         score = 0
         if target != ".":
             score += 10 * abs(self.piece_values[target]) - abs(self.piece_values[attacker])
@@ -203,6 +206,9 @@ class Machine:
 
         self.nodes += 1
 
+        alpha_orig = alpha
+        beta_orig = beta
+
         key = board.hash
 
         entry = self.tt.get(key)
@@ -210,10 +216,21 @@ class Machine:
         stored_move = None
 
         if entry is not None:
-            stored_depth, stored_score, stored_move = entry
+            stored_depth, stored_score, stored_flag, stored_move = entry
 
             if stored_depth >= depth:
-                return stored_score
+
+                if stored_flag == EXACT:
+                    return stored_score
+
+                elif stored_flag == LOWERBOUND:
+                    alpha = max(alpha, stored_score)
+
+                elif stored_flag == UPPERBOUND:
+                    beta = min(beta, stored_score)
+
+                if alpha >= beta:
+                    return stored_score
 
         if depth == 0:
             return self.quiescence(alpha, beta, maximizing)
@@ -265,10 +282,17 @@ class Machine:
                 else:
                     eval = 0 #stalemate
 
-                self.tt[key] = (depth, eval, None)
+                self.tt[key] = (depth, eval, EXACT, None)
                 return eval
 
-            self.tt[key] = (depth, max_eval, best_move)
+            if max_eval <= alpha_orig:
+                flag = UPPERBOUND
+            elif max_eval >= beta_orig:
+                flag = LOWERBOUND
+            else:
+                flag = EXACT
+
+            self.tt[key] = (depth, max_eval, flag, best_move)
             return max_eval
         else:
 
@@ -306,14 +330,24 @@ class Machine:
                 else:
                     eval = 0 #stalemate
 
-                self.tt[key] = (depth, eval, None)
+                self.tt[key] = (depth, eval, EXACT, None)
                 return eval
             
-            self.tt[key] = (depth, min_eval, best_move)
+            if min_eval <= alpha_orig:
+                flag = UPPERBOUND
+            elif min_eval >= beta_orig:
+                flag = LOWERBOUND
+            else:
+                flag = EXACT
+
+            self.tt[key] = (depth, min_eval, flag, best_move)
             return min_eval
         
     def find_best_move(self, depth):
         board = self.board
+
+        start_time = time.perf_counter()
+
         best_move = None
         best_eval = -INF if board.white_to_move else INF
 
@@ -346,5 +380,9 @@ class Machine:
                     best_eval = eval
                     best_move = (sq_from, sq_to)
         print(best_move)
-        print("nodes: ", self.nodes)
+        elapsed = time.perf_counter() - start_time
+        print("Move calculated in: ", f"{elapsed:.3f} seconds")
+        print("Nodes: ", self.nodes)
+        nps = self.nodes / elapsed
+        print(f"NPS: {nps:,.0f}")
         return best_move
