@@ -171,7 +171,7 @@ class Machine:
             if stand_pat <= alpha:
                 return alpha
             beta = min(beta, stand_pat)
-        legal_moves = self.board.generate_legal_moves(maximizing)
+        legal_moves = self.board.generate_legal_moves(maximizing, True)
 
         for sq_from, sq_to in legal_moves:
             if self.board.get_piece(sq_to) == ".":

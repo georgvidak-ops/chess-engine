@@ -578,7 +578,7 @@ class Board:
 
         return pseudo_moves + self.pseudo_move_castling(clr)
     
-    def generate_legal_moves(self, clr):
+    def generate_legal_moves(self, clr, capturesOnly = False):
         legal_moves = []
         own = self.white if clr else self.black
         enemy = self.black if clr else self.white
@@ -616,6 +616,10 @@ class Board:
                     to_bit = moves & -moves
                     to_sq = to_bit.bit_length() - 1
                     moves &= moves - 1
+
+                    if capturesOnly:
+                        if self.get_piece(to_sq) == ".":
+                            continue
 
                     # make move
                     self.makeMove_sq(from_sq, to_sq)
