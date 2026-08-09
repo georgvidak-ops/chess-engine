@@ -1,6 +1,7 @@
 import time
 
 INF = 999999
+MAX_PLY = 64
 
 EXACT = 0
 LOWERBOUND = 1
@@ -27,6 +28,11 @@ class Machine:
         "q": -900,
         "k": 0
     }
+
+    killer_moves = [
+        [None, None]
+        for _ in range(MAX_PLY)
+    ]
 
     # -------------------------
     # Piece Square Tables
@@ -100,7 +106,7 @@ class Machine:
         "R": ROOK_TABLE,
         "Q": QUEEN_TABLE,
         "K": KING_TABLE,
-}
+    }
 
     def move_score(self, move):
         sq_from, sq_to = move
@@ -174,22 +180,10 @@ class Machine:
         legal_moves = self.board.generate_legal_moves(maximizing, True)
 
         for sq_from, sq_to in legal_moves:
-            if self.board.get_piece(sq_to) == ".":
-                continue
-
-            before = self.board.board_array.copy()
-
             self.board.makeMove_sq(sq_from, sq_to)
+
             score = self.quiescence(alpha, beta, not maximizing)
             self.board.unmakeMove_sq(sq_from, sq_to)
-
-            if before != self.board.board_array:
-                print("Broken move:", sq_from, sq_to)
-                for i in range(64):
-                    if before[i] != self.board.board_array[i]:
-                        print(i, before[i], "->", self.board.board_array[i])
-                raise Exception("Board corruption")
-
             if maximizing:
                 alpha = max(alpha, score)
                 if alpha >= beta:
@@ -201,7 +195,7 @@ class Machine:
                 
         return alpha if maximizing else beta
     
-    def alpha_beta(self, depth, alpha, beta, maximizing):
+    def alpha_beta(self, depth, alpha, beta, maximizing, ply):
         board = self.board
 
         self.nodes += 1
@@ -239,9 +233,21 @@ class Machine:
         moves = board.generate_pseudo_moves(clr)
         moves.sort(key = self.move_score, reverse = True)
 
+        tt_moves = 0
+
         if stored_move in moves:
+            tt_moves += 1
             moves.remove(stored_move)
             moves.insert(0, stored_move)
+        killer1, killer2 = self.killer_moves[ply]
+
+        if killer1 in moves:
+            moves.remove(killer1)
+            moves.insert(tt_moves, killer1)
+
+        if killer2 in moves:
+            moves.remove(killer2)
+            moves.insert(tt_moves + 1, killer2)
         
         found_legal = False
         
@@ -250,7 +256,6 @@ class Machine:
             max_eval = -INF
             best_move = None
             for sq_from, sq_to in moves:
-                before = self.board.board_array.copy()
                 board.makeMove_sq(sq_from, sq_to)
 
                 if board.is_king_attacked(clr):
@@ -258,14 +263,8 @@ class Machine:
                     continue
                 
                 found_legal = True
-                eval = self.alpha_beta(depth - 1, alpha, beta, False)
+                eval = self.alpha_beta(depth - 1, alpha, beta, False, ply + 1)
                 board.unmakeMove_sq(sq_from, sq_to)
-                if before != self.board.board_array:
-                    print("Broken move:", sq_from, sq_to)
-                    for i in range(64):
-                        if before[i] != self.board.board_array[i]:
-                            print(i, before[i], "->", self.board.board_array[i])
-                    raise Exception("Board corruption")
 
                 if eval > max_eval:
                     max_eval = eval
@@ -273,6 +272,12 @@ class Machine:
                 alpha = max(alpha, eval)
 
                 if beta <= alpha:
+                    if self.board.get_piece(sq_to) == ".":   # quiet move
+                        killers = self.killer_moves[ply]
+
+                        if killers[0] != (sq_from, sq_to):
+                            killers[1] = killers[0]
+                            killers[0] = (sq_from, sq_to)
                     break
 
             # no legal moves
@@ -299,28 +304,29 @@ class Machine:
             min_eval = INF
             best_move = None
             for sq_from, sq_to in moves:
-                before = self.board.board_array.copy()
                 board.makeMove_sq(sq_from, sq_to)
-
+                
                 if board.is_king_attacked(clr):
                     board.unmakeMove_sq(sq_from, sq_to)
                     continue
 
                 found_legal = True
-                eval = self.alpha_beta(depth - 1, alpha, beta, True)
+                eval = self.alpha_beta(depth - 1, alpha, beta, True, ply + 1)
                 board.unmakeMove_sq(sq_from, sq_to)
-                if before != self.board.board_array:
-                    print("Broken move:", sq_from, sq_to)
-                    for i in range(64):
-                        if before[i] != self.board.board_array[i]:
-                            print(i, before[i], "->", self.board.board_array[i])
-                    raise Exception("Board corruption")
+
                 if eval < min_eval:
                     min_eval = eval
                     best_move = (sq_from, sq_to)
                 beta = min(beta, eval)
 
                 if beta <= alpha:
+                    if self.board.get_piece(sq_to) == ".":   # quiet move
+                        killers = self.killer_moves[ply]
+                        #print(killers)
+                        if killers[0] != (sq_from, sq_to):
+                            killers[1] = killers[0]
+                            killers[0] = (sq_from, sq_to)
+                        
                     break
 
             # no legal moves
@@ -355,21 +361,15 @@ class Machine:
         print(len(moves))
 
         for sq_from, sq_to in moves:
-            before = self.board.board_array.copy()
             board.makeMove_sq(sq_from, sq_to)
             if board.is_king_attacked(not board.white_to_move): #disregard non-legal moves
                 board.unmakeMove_sq(sq_from, sq_to)
                 continue
 
-            eval = self.alpha_beta(depth - 1, -INF, INF, board.white_to_move)
+            eval = self.alpha_beta(depth - 1, -INF, INF, board.white_to_move, 0)
 
             board.unmakeMove_sq(sq_from, sq_to)
-            if before != self.board.board_array:
-                print("Broken move:", sq_from, sq_to)
-                for i in range(64):
-                    if before[i] != self.board.board_array[i]:
-                        print(i, before[i], "->", self.board.board_array[i])
-                raise Exception("Board corruption")
+
             if board.white_to_move:
                 if eval > best_eval:
                     best_eval = eval
@@ -380,6 +380,9 @@ class Machine:
                     best_eval = eval
                     best_move = (sq_from, sq_to)
         print(best_move)
+        for ply in range(MAX_PLY):
+            self.killer_moves[ply][0] = None
+            self.killer_moves[ply][1] = None
         elapsed = time.perf_counter() - start_time
         print("Move calculated in: ", f"{elapsed:.3f} seconds")
         print("Nodes: ", self.nodes)

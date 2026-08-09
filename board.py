@@ -1,5 +1,7 @@
 from zobrist import Zobrist
 
+MASK_64 = 0xFFFFFFFFFFFFFFFF
+
 class Board:
     def __init__(self):
         self.init_bitboards()
@@ -9,24 +11,6 @@ class Board:
         self.captured_piece = "."
         self.just_promoted = False
         self.move_stack = []
-
-        self.board_array = ["."] * 64
-
-        for sq in range(64):
-            bit = 1 << sq
-
-            if self.wp & bit: self.board_array[sq] = "P"
-            elif self.wn & bit: self.board_array[sq] = "N"
-            elif self.wb & bit: self.board_array[sq] = "B"
-            elif self.wr & bit: self.board_array[sq] = "R"
-            elif self.wq & bit: self.board_array[sq] = "Q"
-            elif self.wk & bit: self.board_array[sq] = "K"
-            elif self.bp & bit: self.board_array[sq] = "p"
-            elif self.bn & bit: self.board_array[sq] = "n"
-            elif self.bb & bit: self.board_array[sq] = "b"
-            elif self.br & bit: self.board_array[sq] = "r"
-            elif self.bq & bit: self.board_array[sq] = "q"
-            elif self.bk & bit: self.board_array[sq] = "k"
         
         self.zobrist = Zobrist()
         self.hash = self.zobrist.compute_hash(self)
@@ -76,7 +60,23 @@ class Board:
     # -------------------------
 
     def get_piece(self, sq):
-        return self.board_array[sq]
+        bit = 1 << sq
+
+        if self.wp & bit: return "P"
+        if self.wn & bit: return "N"
+        if self.wb & bit: return "B"
+        if self.wr & bit: return "R"
+        if self.wq & bit: return "Q"
+        if self.wk & bit: return "K"
+
+        if self.bp & bit: return "p"
+        if self.bn & bit: return "n"
+        if self.bb & bit: return "b"
+        if self.br & bit: return "r"
+        if self.bq & bit: return "q"
+        if self.bk & bit: return "k"
+
+        return "."
         
     def extract_squares(self, bb):
         squares = []
@@ -104,7 +104,7 @@ class Board:
     def translate(self, str):
         if str == ".": return str
 
-        lets = ["p", "n", "b", "r", "q", "k", "P", "N", "B","R", "Q", "K"]
+        lets = ["p", "n", "b", "r", "q", "k", "P", "N", "B", "R", "Q", "K"]
         idxs = ["bp", "bn", "bb", "br", "bq", "bk", "wp", "wn", "wb", "wr", "wq", "wk"]
 
         if str in idxs:
@@ -300,7 +300,7 @@ class Board:
             attacks |= (pawns & NOT_A_FILE) << 9
             attacks |= (pawns & NOT_H_FILE) << 7
 
-        return attacks & 0xFFFFFFFFFFFFFFFF #64 bit masking
+        return attacks & MASK_64 #64 bit masking
     
     def knight_attacks(self, from_sq, clr):
         knights = self.wn if clr else self.bn
@@ -324,7 +324,7 @@ class Board:
         attacks |= (knights & NOT_GH_FILE) >> 6
         attacks |= (knights & NOT_AB_FILE) >> 10
 
-        return attacks & 0xFFFFFFFFFFFFFFFF
+        return attacks & MASK_64
     
     def rook_attacks(self, from_sq, clr):
         rooks = self.wr if clr else self.br
@@ -378,7 +378,7 @@ class Board:
         attacks |= king >> 8
         attacks |= (king & NOT_A_FILE) >> 9
 
-        return attacks & 0xFFFFFFFFFFFFFFFF #64 bit masking
+        return attacks & MASK_64 #64 bit masking
 
     def pawn_attackers(self, sq, clr): #clr of the attacker
         target = 1 << sq
@@ -413,7 +413,7 @@ class Board:
         attacks |= (knight & NOT_GH_FILE) >> 6
         attacks |= (knight & NOT_AB_FILE) >> 10
 
-        return attacks & 0xFFFFFFFFFFFFFFFF
+        return attacks & MASK_64
 
     def is_king_attacked(self, clr):
         own = self.white if clr else self.black
@@ -482,7 +482,7 @@ class Board:
             if attacks & ep_bit:
                 moves |= ep_bit
 
-        return moves & 0xFFFFFFFFFFFFFFFF
+        return moves & MASK_64
     
     def pseudo_move_castling(self, clr):
         pseudo_castles = []
@@ -676,10 +676,10 @@ class Board:
         queen_bb = self.wq if clr else self.bq
         pawn_bb = self.wp if clr else self.bp
         if making:
-            pawn_bb &= ~(1 << sq)
+            pawn_bb &= ~(1 << sq) & MASK_64
             queen_bb |= (1 << sq)
         else:
-            queen_bb &= ~(1 << sq)
+            queen_bb &= ~(1 << sq) & MASK_64
             pawn_bb |= (1 << sq)
 
         attr1, attr2 = ("wp", "wq") if clr else ("bp", "bq")
@@ -735,25 +735,43 @@ class Board:
 
         elif piece == "r":
             if sq_from == 7:
-                self.castling_rights &= ~0b0001
-            elif sq_from == 0:
                 self.castling_rights &= ~0b0010
+            elif sq_from == 0:
+                self.castling_rights &= ~0b0001
 
-    def castle(self, sq_from, sq_to, making):
-        piece = self.get_piece(sq_from if making else sq_to)
-        clr = piece.isupper()
-        short = sq_to > sq_from
-        r = 0
-        if clr and short:
-            r = self.parse("h1f1") if making else self.parse("f1h1")
-        elif clr and not short:
-            r = self.parse("a1d1") if making else self.parse("d1a1")
-        elif not clr and short:
-            r = self.parse("h8f8") if making else self.parse("f8h8")
-        elif not clr and not short: 
-            r = self.parse("a8d8") if making else self.parse("d8a8")
+    def capture_castling_rights(self, sq):
+        if sq == 63:
+            self.castling_rights &= ~0b1000
+        elif sq == 56:
+            self.castling_rights &= ~0b0100
+        elif sq == 7:
+            self.castling_rights &= ~0b0010
+        elif sq == 0:
+            self.castling_rights &= ~0b0001
 
-        from_sq, to_sq = r
+        
+
+    def castle_rook_squares(self, sq_from, sq_to, clr):
+        if sq_from == 60 and sq_to == 62 and clr:      # White O-O
+            return 63, 61
+        elif sq_from == 60 and sq_to == 58 and clr:    # White O-O-O
+            return 56, 59
+        elif sq_from == 4 and sq_to == 6 and not clr:      # Black O-O
+            return 7, 5
+        elif sq_from == 4 and sq_to == 2 and not clr:      # Black O-O-O
+            return 0, 3
+
+        return None
+
+    def castle(self, sq_from, sq_to, making, clr):
+        r = self.castle_rook_squares(sq_from, sq_to, clr)
+
+        from_sq, to_sq = (0,0)
+        if making:
+            from_sq, to_sq = r
+        else:
+            to_sq, from_sq = r
+
         return from_sq, to_sq
 
 
@@ -761,7 +779,7 @@ class Board:
     # MAKE MOVE
     # -------------------------
 
-    def makeMove_sq(self, sq_from, sq_to, castling=False, castleLegalityChecking=False):
+    def makeMove_sq(self, sq_from, sq_to, castleLegalityChecking=False):
         piece = self.get_piece(sq_from)
         mapping = {
                     "P":"wp","N":"wn","B":"wb","R":"wr","Q":"wq","K":"wk",
@@ -776,21 +794,17 @@ class Board:
         if abs(sq_to - sq_from) == 2 and piece.lower() == "k" and not castleLegalityChecking:
             r_piece = "r" if piece == "k" else "R"
             # setting variables
-            sq_from_rook, sq_to_rook = self.castle(sq_from, sq_to, True)
+            sq_from_rook, sq_to_rook = self.castle(sq_from, sq_to, True, self.white_to_move)
             to_bit = 1 << sq_to_rook
             from_bit = 1 << sq_from_rook
             # moving rook
             bb = getattr(self, mapping[r_piece])
-            bb &= ~from_bit
+            bb &= ~from_bit & MASK_64
             bb |= to_bit
             setattr(self, mapping[r_piece], bb)
 
             self.hash ^= self.zobrist.piece_keys[r_piece][sq_from_rook]
             self.hash ^= self.zobrist.piece_keys[r_piece][sq_to_rook]
-
-            # array board update
-            self.board_array[sq_to_rook] = self.board_array[sq_from_rook]
-            self.board_array[sq_from_rook] = "."
         
         # remove old EP from hash
         if self.en_passant_square:
@@ -813,36 +827,35 @@ class Board:
         
         old_castling_rights = self.castling_rights
         self.castling_rights_modify(piece, sq_from)
-        # add new castling rights to hash
-        self.hash ^= self.zobrist.castling_keys[self.castling_rights]
 
         from_bit = 1 << sq_from
         to_bit = 1 << sq_to
 
         self.just_promoted = False
 
-        # array board update
-        self.board_array[sq_to] = self.board_array[sq_from]
-        self.board_array[sq_from] = "."
-
-        self.captured_piece = "."
+        captured_piece = "."
         # capture removal
         for attr in ["wp","wn","wb","wr","wq","wk","bp","bn","bb","br","bq","bk"]:
             if getattr(self, attr) & to_bit:
-                self.captured_piece = attr
-                self.hash ^= self.zobrist.piece_keys[
-                    self.captured_piece[1] if self.captured_piece[0] == "b" # turns wp into P and bp into p etc.
-                    else self.captured_piece[1].upper()
-                ][sq_to]
+                captured_piece = attr
+
+                if captured_piece == "wr" or "br":
+                    self.capture_castling_rights(sq_to)
+
+                self.hash ^= self.zobrist.piece_keys[self.translate(captured_piece)][sq_to]
                 setattr(self, attr, getattr(self, attr) & ~to_bit)
 
+
+        # add new castling rights to hash
+        self.hash ^= self.zobrist.castling_keys[self.castling_rights]
+        
         # move piece
 
         self.hash ^= self.zobrist.piece_keys[piece][sq_from]
         self.hash ^= self.zobrist.piece_keys[piece][sq_to]
 
         bb = getattr(self, mapping[piece])
-        bb &= ~from_bit
+        bb &= ~from_bit & MASK_64
         bb |= to_bit
         setattr(self, mapping[piece], bb)
 
@@ -854,18 +867,10 @@ class Board:
             queen = "Q" if piece == "P" else "q"
             self.hash ^= self.zobrist.piece_keys[queen][sq_to]
 
-            # array board update
-            if piece == "P":
-                self.board_array[sq_to] = "Q"
-            else:
-                self.board_array[sq_to] = "q"
-
-        if castling: return True # when the rook move of castling takes place, dont save it in the stack
         self.white_to_move = not self.white_to_move
 
         # move stacking in memory
         moved_piece = piece
-        captured_piece = self.captured_piece
         promotion_happened = self.just_promoted
         old_white_to_move_after = self.white_to_move
 
@@ -877,11 +882,11 @@ class Board:
             promotion_happened,
             old_white_to_move_after,
         )
-        self.move_stack.append(move_state)
         self.hash ^= self.zobrist.side_key # update side-to-move hash key
+        self.move_stack.append(move_state)
         return True
     
-    def unmakeMove_sq(self, sq_from, sq_to, castling=False, castleLegalityChecking=False): # sq_from and #sq_to refer to the original move's sq_from and sq_to
+    def unmakeMove_sq(self, sq_from, sq_to, castleLegalityChecking=False): # sq_from and #sq_to refer to the original move's sq_from and sq_to
         moved_piece, old_en_passant_square, old_castling_rights, promotion_happened, old_white_to_move_after = (0,0,0,0,0)
         captured_piece = "."
         mapping = {
@@ -889,42 +894,31 @@ class Board:
             "p":"bp","n":"bn","b":"bb","r":"br","q":"bq","k":"bk"
         }
         # restore saved move state
-        if not castling:
-            (
-                moved_piece,
-                captured_piece,
-                old_en_passant_square,
-                old_castling_rights,
-                promotion_happened,
-                old_white_to_move_after,
-            ) = self.move_stack.pop()
-        else:
-            moved_piece = self.get_piece(sq_to)
+        (
+            moved_piece,
+            captured_piece,
+            old_en_passant_square,
+            old_castling_rights,
+            promotion_happened,
+            old_white_to_move_after,
+        ) = self.move_stack.pop()
 
         # restoring castle
         if abs(sq_to - sq_from) == 2 and moved_piece.lower() == "k" and not castleLegalityChecking:
             r_piece = "r" if moved_piece == "k" else "R"
             # setting variables
-            sq_from_rook, sq_to_rook = self.castle(sq_from, sq_to, False)
+            sq_from_rook, sq_to_rook = self.castle(sq_from, sq_to, False, not self.white_to_move) # color iversed because during unmake_move, make_move has already given turn to other player
             to_bit = 1 << sq_to_rook
             from_bit = 1 << sq_from_rook
             # moving rook
             bb = getattr(self, mapping[r_piece])
-            bb &= ~from_bit
+            bb &= ~from_bit & MASK_64
             bb |= to_bit
             setattr(self, mapping[r_piece], bb)
 
             self.hash ^= self.zobrist.piece_keys[r_piece][sq_from_rook]
             self.hash ^= self.zobrist.piece_keys[r_piece][sq_to_rook]
 
-            # array board update
-            self.board_array[sq_to_rook] = self.board_array[sq_from_rook]
-            self.board_array[sq_from_rook] = "."
-
-        
-        # array board update
-        self.board_array[sq_from] = moved_piece
-        self.board_array[sq_to] = self.translate(captured_piece)
 
         from_bit = 1 << sq_from
         to_bit = 1 << sq_to
@@ -954,7 +948,7 @@ class Board:
 
         # move piece back
         bb = getattr(self, mapping[moved_piece])
-        bb &= ~to_bit
+        bb &= ~to_bit & MASK_64
         bb |= from_bit
         setattr(self, mapping[moved_piece], bb)
 
@@ -965,9 +959,6 @@ class Board:
             cap_bb |= to_bit
 
             setattr(self, captured_piece, cap_bb)
-
-        # restore game state
-        if castling: return True
 
         self.en_passant_square = old_en_passant_square
 
@@ -981,7 +972,7 @@ class Board:
         to_bit = 1 << sq
         for attr in ["wp","bp"]:
             if getattr(self, attr) & to_bit:
-                setattr(self, attr, getattr(self, attr) & ~to_bit)
+                setattr(self, attr, getattr(self, attr) & ~to_bit & MASK_64)
         return True
     
     # -------------------------
