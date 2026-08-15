@@ -1,7 +1,12 @@
 import time
 
-INF = 999999
+INF = 999_999_999
 MAX_PLY = 64
+
+# move_score universal values
+CAPTURE_MOVE_VALUE = 100_000
+KILLER_MOVE_1_SCORE = 90_000
+KILLER_MOVE_2_SCORE = 80_000
 
 EXACT = 0
 LOWERBOUND = 1
@@ -13,6 +18,7 @@ class Machine:
         self.board = board
         self.nodes = 0
         self.tt = {}
+        self.root_ply = 0
 
     piece_values = {
         "P": 100,
@@ -110,13 +116,22 @@ class Machine:
 
     def move_score(self, move):
         sq_from, sq_to = move
+        ply = self.root_ply
 
         attacker = self.board.get_piece(sq_from)
         target = self.board.get_piece(sq_to)
         
         score = 0
+        # 1. Killer moves
+        killer1, killer2 = self.killer_moves[ply]
+        if move == killer1:
+            score = KILLER_MOVE_1_SCORE
+        if move == killer2:
+            score =  KILLER_MOVE_2_SCORE
+        # 2. Ordered captures
         if target != ".":
-            score += 10 * abs(self.piece_values[target]) - abs(self.piece_values[attacker])
+            score += CAPTURE_MOVE_VALUE + (10 * abs(self.piece_values[target]) - abs(self.piece_values[attacker]))
+
 
         return score
     
@@ -231,6 +246,7 @@ class Machine:
 
         clr = maximizing
         moves = board.generate_pseudo_moves(clr)
+        self.root_ply = ply
         moves.sort(key = self.move_score, reverse = True)
 
         tt_moves = 0
@@ -239,15 +255,6 @@ class Machine:
             tt_moves += 1
             moves.remove(stored_move)
             moves.insert(0, stored_move)
-        killer1, killer2 = self.killer_moves[ply]
-
-        if killer1 in moves:
-            moves.remove(killer1)
-            moves.insert(tt_moves, killer1)
-
-        if killer2 in moves:
-            moves.remove(killer2)
-            moves.insert(tt_moves + 1, killer2)
         
         found_legal = False
         
@@ -283,7 +290,7 @@ class Machine:
             # no legal moves
             if not found_legal:
                 if board.is_king_attacked(clr):
-                    eval = (-INF + depth) if maximizing else (INF - depth)
+                    eval = (-INF + ply) if maximizing else (INF - ply)
                 else:
                     eval = 0 #stalemate
 
@@ -332,7 +339,7 @@ class Machine:
             # no legal moves
             if not found_legal:
                 if board.is_king_attacked(clr):
-                    eval = (-INF + depth) if maximizing else (INF - depth)
+                    eval = (-INF + ply) if maximizing else (INF - ply)
                 else:
                     eval = 0 #stalemate
 
@@ -348,18 +355,45 @@ class Machine:
 
             self.tt[key] = (depth, min_eval, flag, best_move)
             return min_eval
-        
-    def find_best_move(self, depth):
-        board = self.board
+
+    def find_best_move(self, max_depth):
+        best_move = None
+        best_eval = 0
 
         start_time = time.perf_counter()
+
+        for depth in range(1, max_depth + 1):
+            move, eval = self.root_search(depth)
+
+            best_move = move
+            best_eval = eval
+
+            if abs(best_eval) >= INF - MAX_PLY:
+                print(f"Forced mate detected at depth {depth}")
+                break
+
+        for ply in range(MAX_PLY):
+            self.killer_moves[ply][0] = None
+            self.killer_moves[ply][1] = None
+
+
+        elapsed = time.perf_counter() - start_time
+        print("Move:", f"{best_move} calculated in: ", f"{elapsed:.3f} seconds")
+        print("Nodes: ", self.nodes)
+        nps = self.nodes / elapsed
+        print(f"NPS: {nps:,.0f}")
+
+        return best_move
+        
+    def root_search(self, depth):
+        board = self.board
 
         best_move = None
         best_eval = -INF if board.white_to_move else INF
 
         moves = board.generate_pseudo_moves(board.white_to_move)
-        print(len(moves))
-
+        self.root_ply = depth
+        moves.sort(key = self.move_score, reverse = True)
         for sq_from, sq_to in moves:
             board.makeMove_sq(sq_from, sq_to)
             if board.is_king_attacked(not board.white_to_move): #disregard non-legal moves
@@ -379,13 +413,5 @@ class Machine:
                 if eval < best_eval:
                     best_eval = eval
                     best_move = (sq_from, sq_to)
-        print(best_move)
-        for ply in range(MAX_PLY):
-            self.killer_moves[ply][0] = None
-            self.killer_moves[ply][1] = None
-        elapsed = time.perf_counter() - start_time
-        print("Move calculated in: ", f"{elapsed:.3f} seconds")
-        print("Nodes: ", self.nodes)
-        nps = self.nodes / elapsed
-        print(f"NPS: {nps:,.0f}")
-        return best_move
+
+        return (best_move, best_eval)
