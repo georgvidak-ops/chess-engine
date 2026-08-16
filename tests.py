@@ -96,4 +96,4 @@ def exception_raiser(board, piece, name, num):
             board.print_board()
             raise Exception(name, " exception")
 
-test_search_does_not_corrupt_board()
+test_search_does_not_corrupt_board() # function searches the first move at depth 6 and is used as a benchmark for speed after each update

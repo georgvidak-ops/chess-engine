@@ -7,6 +7,7 @@ MAX_PLY = 64
 CAPTURE_MOVE_VALUE = 100_000
 KILLER_MOVE_1_SCORE = 90_000
 KILLER_MOVE_2_SCORE = 80_000
+MAX_QUIET_MOVE_SCORE = 50_000
 
 # tt flags
 EXACT = 0
@@ -26,6 +27,7 @@ class Machine:
         self.nodes = 0
         self.tt = {}
         self.root_ply = 0
+        self.history_table = [0] * 4096 # instead of a 64x64 value 2d table a 1d table of 64*64 elements computes faster
 
     piece_values = {
         "P": 100,
@@ -128,19 +130,17 @@ class Machine:
         attacker = self.board.get_piece(sq_from)
         target = self.board.get_piece(sq_to)
         
-        score = 0
         # 1. Killer moves
         killer1, killer2 = self.killer_moves[ply]
         if move == killer1:
-            score = KILLER_MOVE_1_SCORE
+            return KILLER_MOVE_1_SCORE
         if move == killer2:
-            score =  KILLER_MOVE_2_SCORE
+            return  KILLER_MOVE_2_SCORE
         # 2. Ordered captures
         if target != ".":
-            score += CAPTURE_MOVE_VALUE + (10 * abs(self.piece_values[target]) - abs(self.piece_values[attacker]))
+            return CAPTURE_MOVE_VALUE + (10 * abs(self.piece_values[target]) - abs(self.piece_values[attacker]))
 
-
-        return score
+        return self.history_table[(sq_from << 6) | sq_to]
     
     def castling_rights_penalty(self):
         pen = 0
@@ -292,7 +292,11 @@ class Machine:
                 if beta <= alpha:
                     if self.board.get_piece(sq_to) == ".":   # quiet move
                         killers = self.killer_moves[ply]
+                        # update history heuristics
+                        idx = (sq_from << 6) | sq_to
+                        self.history_table[idx] = min(self.history_table[idx] + (depth * depth) * 12, MAX_QUIET_MOVE_SCORE)
 
+                        # update killer moves
                         if killers[0] != (sq_from, sq_to):
                             killers[1] = killers[0]
                             killers[0] = (sq_from, sq_to)
@@ -340,7 +344,10 @@ class Machine:
                 if beta <= alpha:
                     if self.board.get_piece(sq_to) == ".":   # quiet move
                         killers = self.killer_moves[ply]
-                        #print(killers)
+                        # update history heuristics
+                        idx = (sq_from << 6) | sq_to
+                        self.history_table[idx] = min(self.history_table[idx] + (depth * depth) * 12, MAX_QUIET_MOVE_SCORE)
+                        # update killer moves
                         if killers[0] != (sq_from, sq_to):
                             killers[1] = killers[0]
                             killers[0] = (sq_from, sq_to)
@@ -383,6 +390,8 @@ class Machine:
                 print(f"Forced mate detected at depth {depth}")
                 break
 
+            # Halve history table between iterative deepening loops
+            self.history_table = [val // 2 for val in self.history_table]
         for ply in range(MAX_PLY):
             self.killer_moves[ply][0] = None
             self.killer_moves[ply][1] = None
