@@ -95,3 +95,5 @@ def exception_raiser(board, piece, name, num):
             print(piece)
             board.print_board()
             raise Exception(name, " exception")
+
+test_search_does_not_corrupt_board()

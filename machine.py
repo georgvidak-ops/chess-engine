@@ -8,9 +8,16 @@ CAPTURE_MOVE_VALUE = 100_000
 KILLER_MOVE_1_SCORE = 90_000
 KILLER_MOVE_2_SCORE = 80_000
 
+# tt flags
 EXACT = 0
 LOWERBOUND = 1
 UPPERBOUND = 2
+
+# eval shift types
+MOVEMENT = 0
+CAPTURE = 1
+PROMOTION = 2
+# en passant and castling are both variants of movement and capture types
 
 class Machine:
 
@@ -163,22 +170,26 @@ class Machine:
                         pen += 2 * penalty
         return pen
 
-    
+    def shift_eval(self, clr, type, move=None, piece=None): # if the move is a capture, arguement "piece" is captured piece
+        pure_eval = 0
+        sq_from, sq_to = 0, 0
+        if move: sq_from, sq_to = move
+        
+        piece = piece.upper()
+
+        if type == MOVEMENT:
+            pure_eval -= self.PST[piece][sq_from]
+            pure_eval += self.PST[piece][sq_to]
+        elif type == CAPTURE:
+            pure_eval += self.piece_values[piece] # + sign because the side playing is benefited by the amount of points lost on the enemy
+        elif type == PROMOTION:
+            pure_eval -= self.piece_values["P"]
+            pure_eval += self.piece_values["Q"]
+
+        return pure_eval if clr else -pure_eval
 
     def evaluate(self):
-        eval = 0
-        eval += self.castling_rights_penalty()
-        for sq in range(64):
-            piece = self.board.get_piece(sq)
-
-            if piece != ".":
-                eval += self.piece_values[piece]
-                if piece.isupper():
-                    eval += self.PST[piece][sq]
-                else:
-                    eval -= self.PST[piece.upper()][63 - sq]
-
-        return eval
+        return self.board.eval_score + self.castling_rights_penalty()
     
     def quiescence(self, alpha, beta, maximizing):
 

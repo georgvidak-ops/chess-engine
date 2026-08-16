@@ -1,6 +1,13 @@
 from zobrist import Zobrist
+from machine import Machine
 
 MASK_64 = 0xFFFFFFFFFFFFFFFF
+
+# eval shift types
+MOVEMENT = 0
+CAPTURE = 1
+PROMOTION = 2
+# en passant and castling are both variants of movement and capture types
 
 class Board:
     def __init__(self):
@@ -11,6 +18,8 @@ class Board:
         self.captured_piece = "."
         self.just_promoted = False
         self.move_stack = []
+        self.engine = Machine(self)
+        self.eval_score = 0 # no need to initialize it in any way since starting position is considered equal
         
         self.zobrist = Zobrist()
         self.hash = self.zobrist.compute_hash(self)
@@ -666,7 +675,6 @@ class Board:
             if target & enemy:
                 return True
             elif not (target & enemy) and self.en_passant_square  == sq_to:
-                self.en_passant_capture_removal(sq_to - direction)
                 return True
 
         return False
@@ -782,10 +790,11 @@ class Board:
     def makeMove_sq(self, sq_from, sq_to, castleLegalityChecking=False):
         piece = self.get_piece(sq_from)
         mapping = {
-                    "P":"wp","N":"wn","B":"wb","R":"wr","Q":"wq","K":"wk",
-                    "p":"bp","n":"bn","b":"bb","r":"br","q":"bq","k":"bk"
-                }
+            "P":"wp","N":"wn","B":"wb","R":"wr","Q":"wq","K":"wk",
+            "p":"bp","n":"bn","b":"bb","r":"br","q":"bq","k":"bk"
+        }
         old_en_passant_square = 0
+        old_eval = self.eval_score
 
         if piece == ".":
             return False
@@ -802,6 +811,13 @@ class Board:
             bb &= ~from_bit & MASK_64
             bb |= to_bit
             setattr(self, mapping[r_piece], bb)
+            # shift eval
+            self.eval_score += self.engine.shift_eval(
+                self.white_to_move, # clr
+                MOVEMENT, # type
+                move = (sq_from_rook, sq_to_rook), # move
+                piece = r_piece
+            )
 
             self.hash ^= self.zobrist.piece_keys[r_piece][sq_from_rook]
             self.hash ^= self.zobrist.piece_keys[r_piece][sq_to_rook]
@@ -822,6 +838,21 @@ class Board:
         if self.en_passant_square:
             self.hash ^= self.zobrist.ep_keys[self.en_passant_square % 8]
 
+        # handle EP
+        was_en_passant = False
+        if self.get_piece(sq_to) == "." and piece.upper() == "P" and abs(sq_to - sq_from) in (7, 9) and sq_to == old_en_passant_square:
+            #if these conditions are met then the move was a pawn that captured another via en passant
+            was_en_passant = True
+
+            #shift eval
+            self.eval_score += self.engine.shift_eval(
+                self.white_to_move, # clr
+                CAPTURE, # type
+                piece = "P"
+            )
+
+            self.en_passant_capture_removal(sq_to, self.white_to_move)
+
         # remove old castling rights
         self.hash ^= self.zobrist.castling_keys[self.castling_rights]
         
@@ -834,16 +865,27 @@ class Board:
         self.just_promoted = False
 
         captured_piece = "."
+        if was_en_passant:
+            captured_piece = "bp" if self.white_to_move else "wp"
+            direction = 8 if self.white_to_move else - 8
+            self.hash ^= self.zobrist.piece_keys[self.translate(captured_piece)][sq_to + direction]
         # capture removal
         for attr in ["wp","wn","wb","wr","wq","wk","bp","bn","bb","br","bq","bk"]:
             if getattr(self, attr) & to_bit:
                 captured_piece = attr
 
-                if captured_piece == "wr" or "br":
+                if captured_piece == "wr" or captured_piece == "br":
                     self.capture_castling_rights(sq_to)
 
                 self.hash ^= self.zobrist.piece_keys[self.translate(captured_piece)][sq_to]
                 setattr(self, attr, getattr(self, attr) & ~to_bit)
+
+                # shift eval
+                self.eval_score += self.engine.shift_eval(
+                    self.white_to_move, # clr
+                    CAPTURE, # type
+                    piece = self.translate(captured_piece) # captured piece is passed as an argument instead of moved piece when move is a capture
+                )
 
 
         # add new castling rights to hash
@@ -859,6 +901,14 @@ class Board:
         bb |= to_bit
         setattr(self, mapping[piece], bb)
 
+        # shift eval
+        self.eval_score += self.engine.shift_eval(
+            self.white_to_move, # clr
+            MOVEMENT, # type
+            move = (sq_from, sq_to), # move
+            piece = piece
+        )
+
         # promotion
         if piece.lower() == "p" and sq_to // 8 in (0,7):
             self.just_promoted = True
@@ -866,6 +916,13 @@ class Board:
             self.hash ^= self.zobrist.piece_keys[piece][sq_to]
             queen = "Q" if piece == "P" else "q"
             self.hash ^= self.zobrist.piece_keys[queen][sq_to]
+
+            # shift eval
+            self.eval_score += self.engine.shift_eval(
+                self.white_to_move, # clr
+                PROMOTION, # type
+                piece = "P"
+            )
 
         self.white_to_move = not self.white_to_move
 
@@ -878,17 +935,20 @@ class Board:
             moved_piece,
             captured_piece,
             old_en_passant_square,
+            was_en_passant,
             old_castling_rights,
             promotion_happened,
             old_white_to_move_after,
+            old_eval
         )
         self.hash ^= self.zobrist.side_key # update side-to-move hash key
         self.move_stack.append(move_state)
         return True
     
     def unmakeMove_sq(self, sq_from, sq_to, castleLegalityChecking=False): # sq_from and #sq_to refer to the original move's sq_from and sq_to
-        moved_piece, old_en_passant_square, old_castling_rights, promotion_happened, old_white_to_move_after = (0,0,0,0,0)
+        moved_piece, old_en_passant_square, old_castling_rights, promotion_happened, old_white_to_move_after, old_eval = (0,0,0,0,0,0)
         captured_piece = "."
+        was_en_passant = False
         mapping = {
             "P":"wp","N":"wn","B":"wb","R":"wr","Q":"wq","K":"wk",
             "p":"bp","n":"bn","b":"bb","r":"br","q":"bq","k":"bk"
@@ -898,16 +958,21 @@ class Board:
             moved_piece,
             captured_piece,
             old_en_passant_square,
+            was_en_passant,
             old_castling_rights,
             promotion_happened,
             old_white_to_move_after,
+            old_eval
         ) = self.move_stack.pop()
+
+        # restoring eval
+        self.eval_score = old_eval
 
         # restoring castle
         if abs(sq_to - sq_from) == 2 and moved_piece.lower() == "k" and not castleLegalityChecking:
             r_piece = "r" if moved_piece == "k" else "R"
             # setting variables
-            sq_from_rook, sq_to_rook = self.castle(sq_from, sq_to, False, not self.white_to_move) # color iversed because during unmake_move, make_move has already given turn to other player
+            sq_from_rook, sq_to_rook = self.castle(sq_from, sq_to, False, not self.white_to_move) # color inversed because during unmake_move, make_move has already given turn to other player
             to_bit = 1 << sq_to_rook
             from_bit = 1 << sq_from_rook
             # moving rook
@@ -928,7 +993,11 @@ class Board:
         self.hash ^= self.zobrist.piece_keys[moved_piece][sq_from]
         self.hash ^= self.zobrist.piece_keys[moved_piece][sq_to]
         if captured_piece != ".":
-            self.hash ^= self.zobrist.piece_keys[self.translate(captured_piece)][sq_to]
+            if was_en_passant:
+                direction = 8 if self.white_to_move else -8
+                self.hash ^= self.zobrist.piece_keys[self.translate(captured_piece)][sq_to + direction]
+            else:
+                self.hash ^= self.zobrist.piece_keys[self.translate(captured_piece)][sq_to]
         
         self.hash ^= self.zobrist.castling_keys[self.castling_rights] # remove hashed rights of move
         self.hash ^= self.zobrist.castling_keys[old_castling_rights] # hash rights before move
@@ -954,11 +1023,14 @@ class Board:
 
         # restore captured piece
         if captured_piece != ".":
-            cap_bb = getattr(self, captured_piece)
+            if was_en_passant:
+                self.en_passant_capture_restoration(sq_to, not self.white_to_move) # color inversed because during unmake_move, make_move has already given turn to other player
+            else:
+                cap_bb = getattr(self, captured_piece)
 
-            cap_bb |= to_bit
+                cap_bb |= to_bit
 
-            setattr(self, captured_piece, cap_bb)
+                setattr(self, captured_piece, cap_bb)
 
         self.en_passant_square = old_en_passant_square
 
@@ -968,12 +1040,26 @@ class Board:
 
         return True
 
-    def en_passant_capture_removal(self, sq):
-        to_bit = 1 << sq
-        for attr in ["wp","bp"]:
-            if getattr(self, attr) & to_bit:
-                setattr(self, attr, getattr(self, attr) & ~to_bit & MASK_64)
-        return True
+    def en_passant_capture_removal(self, sq_to, clr):
+        direction = 8 if clr else -8
+
+        to_bit = 1 << (sq_to + direction)
+        attr = "bp" if clr else "wp"
+        if getattr(self, attr) & to_bit:
+            setattr(self, attr, getattr(self, attr) & ~to_bit & MASK_64)
+
+        return
+
+    def en_passant_capture_restoration(self, sq_to, clr):
+        direction = 8 if clr else -8
+        
+        to_bit = 1 << (sq_to + direction)
+
+        attr = "bp" if clr else "wp"
+        setattr(self, attr, getattr(self, attr) | to_bit & MASK_64)
+
+        return
+                
     
     # -------------------------
     # PERFT TESTING
