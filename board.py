@@ -495,10 +495,15 @@ class Board:
     
     def pseudo_move_castling(self, clr):
         pseudo_castles = []
+        rights = self.castling_rights
+        king = self.wk if clr else self.bk
 
         from_sq = 60 if clr else 4
         to_sq_short = 62 if clr else 6
         to_sq_long  = 58 if clr else 2
+
+        if rights == 0b0000 or king & (1 << from_sq):
+            return pseudo_castles
 
         pieces_short = [61, 62] if clr else [5, 6]
         pieces_long  = [57, 58, 59] if clr else [1, 2, 3]
@@ -603,15 +608,15 @@ class Board:
                 bb &= bb - 1  # remove LSB
 
                 # generate pseudo-legal targets for this square
-                if piece == "wp" or piece == "bp":
+                if piece[1] == "p":
                     moves = self.pawn_moves(from_sq, clr)
-                elif piece == "wn" or piece == "bn":
+                elif piece[1] == "n":
                     moves = self.knight_attacks(from_sq, clr) & ~own
-                elif piece == "wb" or piece == "bb":
+                elif piece[1] == "b":
                     moves = self.bishop_moves(from_sq, own, enemy, False)
-                elif piece == "wr" or piece == "br":
+                elif piece[1] == "r":
                     moves = self.rook_moves(from_sq, own, enemy, False)
-                elif piece == "wq" or piece == "bq":
+                elif piece[1] == "q":
                     moves = self.queen_moves(from_sq, own, enemy, False)
                 else:  # king
                     moves = self.king_attacker(clr) & ~own
@@ -626,9 +631,13 @@ class Board:
                     to_sq = to_bit.bit_length() - 1
                     moves &= moves - 1
 
-                    if capturesOnly:
-                        if self.get_piece(to_sq) == ".":
-                            continue
+                    is_quiet = not (to_bit & enemy)
+                    is_ep = False
+                    if piece == "wp" or "bp" and to_sq == self.en_passant_square:
+                        is_ep == True
+
+                    if (is_quiet or is_ep) and capturesOnly:
+                        continue
 
                     # make move
                     self.makeMove_sq(from_sq, to_sq)
@@ -640,6 +649,7 @@ class Board:
                     # undo move
                     self.unmakeMove_sq(from_sq, to_sq)
 
+        if capturesOnly: return legal_moves
         return legal_moves + self.legal_move_castling(clr)
 
 

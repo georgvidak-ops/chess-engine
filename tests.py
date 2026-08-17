@@ -1,5 +1,9 @@
 from board import Board
 from machine import Machine
+import cProfile
+import pstats
+
+profiler = cProfile.Profile()
 
 def snapshot(board):
     return (
@@ -54,16 +58,7 @@ def validate_board(board):
     
     print("Board Validated")
 
-def test_search_does_not_corrupt_board():
-    board = Board()
-    machine = Machine(board)
-
-    before = snapshot(board)
-
-    machine.find_best_move(6)
-
-    after = snapshot(board)
-
+def snapshotcomp(before, after):
     if before != after:
         print("SEARCH CORRUPTED BOARD")
 
@@ -85,6 +80,38 @@ def test_search_does_not_corrupt_board():
         raise AssertionError("Search corrupted board")
 
     print("Search integrity test passed")
+
+
+def board_bottleneck_profiling():
+    board = Board()
+    machine = Machine(board)
+
+    before = snapshot(board)
+    profiler.enable()
+
+    machine.find_best_move(6)
+
+    profiler.disable()
+    after = snapshot(board)
+
+    stats = pstats.Stats(profiler)
+    stats.sort_stats("cumtime")
+    stats.print_stats(30)
+
+    snapshotcomp(before, after)
+    board.print_board()
+
+def speed_benchmark():
+    board = Board()
+    machine = Machine(board)
+
+    before = snapshot(board)
+
+    machine.find_best_move(6)
+
+    after = snapshot(board)
+
+    snapshotcomp(before, after)
     board.print_board()
 
 def count_pieces(piece):
@@ -96,4 +123,4 @@ def exception_raiser(board, piece, name, num):
             board.print_board()
             raise Exception(name, " exception")
 
-test_search_does_not_corrupt_board() # function searches the first move at depth 6 and is used as a benchmark for speed after each update
+speed_benchmark() # function searches the first move at depth 6 and is used as a benchmark for speed after each update
