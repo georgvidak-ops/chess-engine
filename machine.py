@@ -2,6 +2,7 @@ import time
 
 INF = 999_999_999
 MAX_PLY = 64
+Q_DELTA_MARGIN = 100
 
 # move_score universal values
 CAPTURE_MOVE_VALUE = 100_000
@@ -192,30 +193,49 @@ class Machine:
         return self.board.eval_score + self.castling_rights_penalty()
     
     def quiescence(self, alpha, beta, maximizing):
-
+        in_check = self.board.is_king_attacked(maximizing)
         stand_pat = self.evaluate()
 
-        if maximizing:
-            if stand_pat >= beta:
-                return beta
-            alpha = max(alpha, stand_pat)
-        else:
-            if stand_pat <= alpha:
-                return alpha
-            beta = min(beta, stand_pat)
-        legal_moves = self.board.generate_legal_moves(maximizing, True)
+        if not in_check:
+            if maximizing:
+                if stand_pat >= beta:
+                    return beta
+                if stand_pat > alpha:
+                    alpha = stand_pat
+            else:
+                if stand_pat <= alpha:
+                    return alpha
+                if stand_pat < beta:
+                    beta = stand_pat
 
-        for sq_from, sq_to in legal_moves:
+            moves = self.board.generate_captures(maximizing)
+
+        else:
+            # search evasions when in check to avoid illegal moves
+            moves = self.board.generate_legal_moves(maximizing)
+
+        for sq_from, sq_to in moves:
+
+            captured_piece = self.board.get_piece(sq_to)
+            captured_value = abs(self.piece_values[captured_piece]) if captured_piece != "." else 0
+
+            if stand_pat + captured_value + Q_DELTA_MARGIN < alpha:
+                continue
+
             self.board.makeMove_sq(sq_from, sq_to)
 
             score = self.quiescence(alpha, beta, not maximizing)
+
             self.board.unmakeMove_sq(sq_from, sq_to)
+
             if maximizing:
-                alpha = max(alpha, score)
+                if score > alpha:
+                    alpha = score
                 if alpha >= beta:
                     return beta
             else:
-                beta = min(beta, score)
+                if score < beta:
+                    beta = score
                 if beta <= alpha:
                     return alpha
                 

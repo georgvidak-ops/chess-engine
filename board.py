@@ -3,6 +3,12 @@ from machine import Machine
 
 MASK_64 = 0xFFFFFFFFFFFFFFFF
 
+# file wrap masks
+NOT_A_FILE  = 0xfefefefefefefefe
+NOT_H_FILE  = 0x7f7f7f7f7f7f7f7f
+NOT_AB_FILE = 0xfcfcfcfcfcfcfcfc
+NOT_GH_FILE = 0x3f3f3f3f3f3f3f3f
+
 # eval shift types
 MOVEMENT = 0
 CAPTURE = 1
@@ -48,21 +54,9 @@ class Board:
         self.wq = (1<<59)
         self.wk = (1<<60)
 
-    # -------------------------
-    # BITBOARDS
-    # -------------------------
-
-    @property
-    def white(self):
-        return self.wp | self.wn | self.wb | self.wr | self.wq | self.wk
-
-    @property
-    def black(self):
-        return self.bp | self.bn | self.bb | self.br | self.bq | self.bk
-
-    @property
-    def occupied(self):
-        return self.white | self.black
+        self.white = self.wp | self.wn | self.wb | self.wr | self.wq | self.wk
+        self.black = self.bp | self.bn | self.bb | self.br | self.bq | self.bk
+        self.occupied = self.white | self.black
 
     # -------------------------
     # SQUARE HELPERS
@@ -113,9 +107,12 @@ class Board:
     def translate(self, str):
         if str == ".": return str
 
+        bbs = [self.bp, self.bn, self.bb, self.br, self.bq, self.bk, self.wp, self.wn, self.wb, self.wr, self.wq, self.wk]
         lets = ["p", "n", "b", "r", "q", "k", "P", "N", "B", "R", "Q", "K"]
         idxs = ["bp", "bn", "bb", "br", "bq", "bk", "wp", "wn", "wb", "wr", "wq", "wk"]
 
+        if str in bbs:
+            return idxs[bbs.index(str)]
         if str in idxs:
             return lets[idxs.index(str)]
         if str in lets:
@@ -297,9 +294,6 @@ class Board:
         if from_sq != None:
             pawns = 1 << from_sq
 
-        NOT_H_FILE = 0xfefefefefefefefe
-        NOT_A_FILE = 0x7f7f7f7f7f7f7f7f
-
         attacks = 0
 
         if clr:
@@ -315,11 +309,6 @@ class Board:
         knights = self.wn if clr else self.bn
         if from_sq != None:
             knights = 1 << from_sq
-
-        NOT_A_FILE  = 0xfefefefefefefefe
-        NOT_H_FILE  = 0x7f7f7f7f7f7f7f7f
-        NOT_AB_FILE = 0xfcfcfcfcfcfcfcfc
-        NOT_GH_FILE = 0x3f3f3f3f3f3f3f3f
 
         attacks = 0
 
@@ -373,8 +362,6 @@ class Board:
     
     def king_attacker(self, clr):
         king = self.wk if clr else self.bk
-        NOT_A_FILE  = 0xfefefefefefefefe
-        NOT_H_FILE  = 0x7f7f7f7f7f7f7f7f
         attacks = 0
 
         attacks |= (king & NOT_H_FILE)  << 1
@@ -392,9 +379,6 @@ class Board:
     def pawn_attackers(self, sq, clr): #clr of the attacker
         target = 1 << sq
 
-        NOT_A_FILE = 0x7f7f7f7f7f7f7f7f
-        NOT_H_FILE = 0xfefefefefefefefe
-
         if clr:
             # White pawns attack upwards, so reverse the attack.
             return ((target << 7) & NOT_H_FILE) | ((target << 9) & NOT_A_FILE)
@@ -404,11 +388,6 @@ class Board:
 
     def knight_attackers(self, sq):
         knight = 1 << sq
-
-        NOT_A_FILE  = 0xfefefefefefefefe
-        NOT_H_FILE  = 0x7f7f7f7f7f7f7f7f
-        NOT_AB_FILE = 0xfcfcfcfcfcfcfcfc
-        NOT_GH_FILE = 0x3f3f3f3f3f3f3f3f
 
         attacks = 0
 
@@ -652,6 +631,58 @@ class Board:
         if capturesOnly: return legal_moves
         return legal_moves + self.legal_move_castling(clr)
 
+    def generate_captures(self, clr):
+            legal_captures = []
+            own = self.white if clr else self.black
+            enemy = self.black if clr else self.white
+            captures = []
+    
+            pieces = ["wp","wn","wb","wr","wq","wk"] if clr else ["bp","bn","bb","br","bq","bk"]
+    
+            for piece in pieces:
+                bb = getattr(self, piece)
+    
+                while bb:
+                    from_bit = bb & -bb
+                    from_sq = from_bit.bit_length() - 1
+                    bb &= bb - 1  # remove LSB
+    
+                    # generate pseudo-legal targets for this square
+                    if piece[1] == "p":
+                        captures = self.pawn_attackers(from_sq, clr) & enemy
+                    elif piece[1] == "n":
+                        captures = self.knight_attacks(from_sq, clr) & enemy
+                    elif piece[1] == "b":
+                        captures = self.bishop_moves(from_sq, own, enemy, False) & enemy
+                    elif piece[1] == "r":
+                        captures = self.rook_moves(from_sq, own, enemy, False) & enemy
+                    elif piece[1] == "q":
+                        captures = self.queen_moves(from_sq, own, enemy, False) & enemy
+                    else:  # king
+                        captures = self.king_attacker(clr) & enemy
+                        
+    
+            # Had to repeat pseudo-legal generation because from_sq couldnt be passed as arguement without causing too much chaos
+    
+    
+                    # iterate targets
+                    while captures:
+                        to_bit = captures & -captures
+                        to_sq = to_bit.bit_length() - 1
+                        captures &= captures - 1
+    
+                        # make move
+                        self.makeMove_sq(from_sq, to_sq)
+    
+                        # legality check
+                        if not self.is_king_attacked(clr):
+                            legal_captures.append((from_sq, to_sq))
+    
+                        # undo move
+                        self.unmakeMove_sq(from_sq, to_sq)
+    
+            return legal_captures
+
 
     # -------------------------
     # PAWN
@@ -850,7 +881,7 @@ class Board:
 
         # handle EP
         was_en_passant = False
-        if self.get_piece(sq_to) == "." and piece.upper() == "P" and abs(sq_to - sq_from) in (7, 9) and sq_to == old_en_passant_square:
+        if not ((1 << sq_to) & self.occupied) and piece.upper() == "P" and abs(sq_to - sq_from) in (7, 9) and sq_to == old_en_passant_square:
             #if these conditions are met then the move was a pawn that captured another via en passant
             was_en_passant = True
 
@@ -880,15 +911,15 @@ class Board:
             direction = 8 if self.white_to_move else - 8
             self.hash ^= self.zobrist.piece_keys[self.translate(captured_piece)][sq_to + direction]
         # capture removal
-        for attr in ["wp","wn","wb","wr","wq","wk","bp","bn","bb","br","bq","bk"]:
-            if getattr(self, attr) & to_bit:
-                captured_piece = attr
+        for attr in [self.wp, self.wn, self.wb, self.wr, self.wq, self.wk, self.bp, self.bn, self.bb, self.br, self.bq, self.bk]:
+            if attr & to_bit:
+                captured_piece = self.translate(attr)
 
                 if captured_piece == "wr" or captured_piece == "br":
                     self.capture_castling_rights(sq_to)
 
                 self.hash ^= self.zobrist.piece_keys[self.translate(captured_piece)][sq_to]
-                setattr(self, attr, getattr(self, attr) & ~to_bit)
+                setattr(self, captured_piece, getattr(self, captured_piece) & ~to_bit)
 
                 # shift eval
                 self.eval_score += self.engine.shift_eval(
@@ -953,6 +984,11 @@ class Board:
         )
         self.hash ^= self.zobrist.side_key # update side-to-move hash key
         self.move_stack.append(move_state)
+
+        self.white = self.wp | self.wn | self.wb | self.wr | self.wq | self.wk
+        self.black = self.bp | self.bn | self.bb | self.br | self.bq | self.bk
+        self.occupied = self.white | self.black
+
         return True
     
     def unmakeMove_sq(self, sq_from, sq_to, castleLegalityChecking=False): # sq_from and #sq_to refer to the original move's sq_from and sq_to
@@ -1004,7 +1040,7 @@ class Board:
         self.hash ^= self.zobrist.piece_keys[moved_piece][sq_to]
         if captured_piece != ".":
             if was_en_passant:
-                direction = 8 if self.white_to_move else -8
+                direction = -8 if self.white_to_move else +8
                 self.hash ^= self.zobrist.piece_keys[self.translate(captured_piece)][sq_to + direction]
             else:
                 self.hash ^= self.zobrist.piece_keys[self.translate(captured_piece)][sq_to]
@@ -1047,6 +1083,10 @@ class Board:
         self.castling_rights = old_castling_rights
 
         self.white_to_move = not old_white_to_move_after
+
+        self.white = self.wp | self.wn | self.wb | self.wr | self.wq | self.wk
+        self.black = self.bp | self.bn | self.bb | self.br | self.bq | self.bk
+        self.occupied = self.white | self.black
 
         return True
 

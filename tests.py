@@ -82,14 +82,14 @@ def snapshotcomp(before, after):
     print("Search integrity test passed")
 
 
-def board_bottleneck_profiling():
+def board_bottleneck_profiling(depth):
     board = Board()
     machine = Machine(board)
 
     before = snapshot(board)
     profiler.enable()
 
-    machine.find_best_move(6)
+    machine.find_best_move(depth)
 
     profiler.disable()
     after = snapshot(board)
@@ -101,13 +101,13 @@ def board_bottleneck_profiling():
     snapshotcomp(before, after)
     board.print_board()
 
-def speed_benchmark():
+def speed_benchmark(depth):
     board = Board()
     machine = Machine(board)
 
     before = snapshot(board)
 
-    machine.find_best_move(6)
+    machine.find_best_move(depth)
 
     after = snapshot(board)
 
@@ -123,4 +123,18 @@ def exception_raiser(board, piece, name, num):
             board.print_board()
             raise Exception(name, " exception")
 
-speed_benchmark() # function searches the first move at depth 6 and is used as a benchmark for speed after each update
+def make_move_profiling():
+    board = Board()
+    profiler.enable()
+    for _ in range(10000):
+        board.makeMove_sq(62, 45)
+        board.makeMove_sq(1, 18)
+        board.makeMove_sq(45,62)
+        board.makeMove_sq(18,1)
+    profiler.disable()
+    stats = pstats.Stats(profiler)
+    stats.sort_stats("cumtime")
+    stats.print_stats(30)
+
+speed_benchmark(6) # function searches the first move at a given depth and is used as a benchmark for speed after each update
+#board_bottleneck_profiling(6)
