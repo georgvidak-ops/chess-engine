@@ -9,6 +9,12 @@ NOT_H_FILE  = 0x7f7f7f7f7f7f7f7f
 NOT_AB_FILE = 0xfcfcfcfcfcfcfcfc
 NOT_GH_FILE = 0x3f3f3f3f3f3f3f3f
 
+# raycast arrays
+ROOK_RAYS = [[0, 0, 0, 0] for _ in range(64)] # N, S, E, W
+BISHOP_RAYS = [[0, 0, 0, 0] for _ in range(64)] # NE, NW, SE, SW
+STRAIGHT = 0
+DIAGONAL = 1
+
 # eval shift types
 MOVEMENT = 0
 CAPTURE = 1
@@ -18,6 +24,7 @@ PROMOTION = 2
 class Board:
     def __init__(self):
         self.init_bitboards()
+        self.init_rays()
         self.white_to_move = True
         self.castling_rights = 0b1111 #each bit represents a castling right 1)White short, 2)White long, 3)Black short, 4)Black long
         self.en_passant_square = 0
@@ -57,6 +64,53 @@ class Board:
         self.white = self.wp | self.wn | self.wb | self.wr | self.wq | self.wk
         self.black = self.bp | self.bn | self.bb | self.br | self.bq | self.bk
         self.occupied = self.white | self.black
+
+    def init_rays(self):
+        for sq in range(64):
+            rank = sq // 8
+            file = sq % 8
+
+            # Rook: N, S, E, W
+            if rank > 0:
+                for r in range(rank - 1, -1, -1):
+                    ROOK_RAYS[sq][0] |= 1 << (r * 8 + file)
+
+            if rank < 7:
+                for r in range(rank + 1, 8):
+                    ROOK_RAYS[sq][1] |= 1 << (r * 8 + file)
+
+            if file < 7:
+                for f in range(file + 1, 8):
+                    ROOK_RAYS[sq][2] |= 1 << (rank * 8 + f)
+
+            if file > 0:
+                for f in range(file - 1, -1, -1):
+                    ROOK_RAYS[sq][3] |= 1 << (rank * 8 + f)
+
+            # Bishop: NE, NW, SE, SW
+            r, f = rank - 1, file + 1
+            while r >= 0 and f < 8:
+                BISHOP_RAYS[sq][0] |= 1 << (r * 8 + f)
+                r -= 1
+                f += 1
+
+            r, f = rank - 1, file - 1
+            while r >= 0 and f >= 0:
+                BISHOP_RAYS[sq][1] |= 1 << (r * 8 + f)
+                r -= 1
+                f -= 1
+
+            r, f = rank + 1, file + 1
+            while r < 8 and f < 8:
+                BISHOP_RAYS[sq][2] |= 1 << (r * 8 + f)
+                r += 1
+                f += 1
+
+            r, f = rank + 1, file - 1
+            while r < 8 and f >= 0:
+                BISHOP_RAYS[sq][3] |= 1 << (r * 8 + f)
+                r += 1
+                f -= 1
 
     # -------------------------
     # SQUARE HELPERS
@@ -138,36 +192,7 @@ class Board:
     # -------------------------
 
     def bishop_moves(self, sq, own, enemy, raycasts): # raycasts = True tells the programme to not count any object it hit whether its own or enemy piece
-        moves = 0
-        occupied = self.occupied
-        for d in [9, 7, -7, -9]:
-            s = sq
-
-            while True:
-                prev = s
-                s += d
-
-                if s < 0 or s > 63:
-                    break
-
-                # file wrap check
-                if abs((s % 8) - (prev % 8)) != 1:
-                    break
-
-                bit = 1 << s
-
-                if raycasts:
-                    moves |= bit
-                    if bit & occupied:
-                        break
-                else:
-                    if bit & own:
-                        break
-                    moves |= bit
-                    if bit & enemy:
-                        break
-
-        return moves
+        return self.raycast_attacks(sq, DIAGONAL, own, enemy, raycasts)
 
     def BishopValidity(self, sq_from, sq_to, clr):
         own = self.white if clr else self.black
@@ -180,59 +205,7 @@ class Board:
     # ROOK
     # -------------------------
     def rook_moves(self, sq, own, enemy, raycasts): # raycasts = True tells the programme to not count any object it hit whether its own or enemy piece
-        moves = 0
-        occupied = self.occupied
-        #veritcal check
-        for d in [8, -8]:
-            s = sq
-
-            while True:
-                prev = s
-                s += d
-
-                if s < 0 or s > 63:
-                    break
-
-                bit = 1 << s
-
-                if raycasts:
-                    moves |= bit
-                    if bit & occupied:
-                        break
-                else:
-                    if bit & own:
-                        break
-                    moves |= bit
-                    if bit & enemy:
-                        break
-        
-        #horizontal check (requires file wrapping protection)
-        for d in [1, -1]:
-            s = sq
-
-            while True:
-                prev = s
-                s += d
-
-                if s < 0 or s > 63:
-                    break
-
-                if (s//8) != (prev//8): break
-
-                bit = 1 << s
-
-                if raycasts:
-                    moves |= bit
-                    if bit & occupied:
-                        break
-                else:
-                    if bit & own:
-                        break
-                    moves |= bit
-                    if bit & enemy:
-                        break
-
-        return moves
+        return self.raycast_attacks(sq, STRAIGHT, own, enemy, raycasts)
     
     def RookValidity(self, sq_from, sq_to, clr):
         own = self.white if clr else self.black
@@ -289,6 +262,45 @@ class Board:
     # -------------------------
     # ATTACK BITBOARDS
     # -------------------------
+
+    def raycast_attacks(self, sq, dirs, own_bb, enemy_bb, raycasts = False):
+        rays = ROOK_RAYS[sq] if dirs == STRAIGHT else BISHOP_RAYS[sq]
+        full_rays = ROOK_RAYS if dirs == STRAIGHT else BISHOP_RAYS
+
+        occupied = own_bb | enemy_bb
+        attacks = 0
+
+        for i, ray in enumerate(rays):
+            blockers = ray & occupied
+
+            if not blockers:
+                attacks |= ray
+                continue
+
+            # find nearest blocker in this direction.
+            use_msb = (
+                (dirs == STRAIGHT and i in (0, 2)) or
+                (dirs == DIAGONAL and i in (0, 1))
+            )
+
+            if use_msb:
+                blocker = blockers.bit_length() - 1 # msb
+            else:
+                blocker = (blockers & -blockers).bit_length() - 1 # lsb
+
+            blocker_bit = 1 << blocker
+
+            # everything before the blocker, num represents the index of the opposite direction of ray
+            num = (i+2) % 4
+            attacks |= ray & full_rays[blocker][num]
+
+            # can capture enemy blocker, but not own piece
+            if (blocker_bit & enemy_bb) and not raycasts:
+                attacks |= blocker_bit
+
+        return attacks
+        
+
     def pawn_attacks(self, from_sq, clr):
         pawns = self.wp if clr else self.bp
         if from_sq != None:
