@@ -45,6 +45,15 @@ class Machine:
         "k": 0
     }
 
+    SEE_values = {
+    "P": 100,
+    "N": 320,
+    "B": 330,
+    "R": 500,
+    "Q": 900,
+    "K": 20000,
+}
+
     killer_moves = [
         [None, None]
         for _ in range(MAX_PLY)
@@ -219,10 +228,19 @@ class Machine:
             captured_piece = self.board.get_piece(sq_to)
             captured_value = abs(self.piece_values[captured_piece]) if captured_piece != "." else 0
 
-            if stand_pat + captured_value + Q_DELTA_MARGIN < alpha:
-                continue
+            if maximizing:
+                if stand_pat + captured_value + Q_DELTA_MARGIN < alpha:
+                    continue
+            else:
+                if stand_pat + captured_value + Q_DELTA_MARGIN > beta:
+                    continue
 
             self.board.makeMove_sq(sq_from, sq_to)
+
+            # checks if making the move leaves king exposed to be captured in opposing turn
+            if self.board.is_king_attacked(maximizing):
+                self.board.unmakeMove_sq(sq_from, sq_to)
+                continue
 
             score = self.quiescence(alpha, beta, not maximizing)
 
@@ -272,7 +290,7 @@ class Machine:
                 if alpha >= beta:
                     return stored_score
 
-        if depth == 0:
+        if depth <= 0:
             return self.quiescence(alpha, beta, maximizing)
 
         clr = maximizing
@@ -293,15 +311,36 @@ class Machine:
 
             max_eval = -INF
             best_move = None
-            for sq_from, sq_to in moves:
+            legal_index = 0
+            for _, (sq_from, sq_to) in enumerate(moves):
+                captured_piece = board.get_piece(sq_to)
+
                 board.makeMove_sq(sq_from, sq_to)
 
                 if board.is_king_attacked(clr):
                     board.unmakeMove_sq(sq_from, sq_to)
                     continue
-                
+
+                legal_index += 1
                 found_legal = True
-                eval = self.alpha_beta(depth - 1, alpha, beta, False, ply + 1)
+                # First legal move gets full-depth search
+                if legal_index < 3 or depth < 3:
+                    eval = self.alpha_beta(depth - 1, alpha, beta, False, ply + 1)
+                else:
+                    reduction = 1
+                    history = self.history_table[sq_from << 6 | sq_to] # << 6 is equal to *64
+                    if history < 600:
+                        reduction = 2
+                    else:
+                        reduction = 1
+
+                    if captured_piece != ".": reduction = 0
+                    eval = self.alpha_beta(depth - 1 - reduction, alpha, beta, False, ply + 1)
+
+                    # Reduced move looks interesting -> full-depth re-search
+                    if eval > alpha:
+                        eval = self.alpha_beta(depth - 1, alpha, beta, False, ply + 1)
+
                 board.unmakeMove_sq(sq_from, sq_to)
 
                 if eval > max_eval:
@@ -345,7 +384,10 @@ class Machine:
 
             min_eval = INF
             best_move = None
-            for sq_from, sq_to in moves:
+            legal_index = 0
+            for _, (sq_from, sq_to) in enumerate(moves):
+                captured_piece = board.get_piece(sq_to)
+
                 board.makeMove_sq(sq_from, sq_to)
                 
                 if board.is_king_attacked(clr):
@@ -353,7 +395,24 @@ class Machine:
                     continue
 
                 found_legal = True
-                eval = self.alpha_beta(depth - 1, alpha, beta, True, ply + 1)
+                legal_index += 1
+                if legal_index < 3 or depth < 3:
+                    eval = self.alpha_beta(depth - 1, alpha, beta, True, ply + 1)
+                else:
+                    reduction = 1
+                    history = self.history_table[sq_from << 6 | sq_to] # << 6 is equal to *64
+                    if history < 600:
+                        reduction = 2
+                    else:
+                        reduction = 1
+
+                    if captured_piece != ".": reduction = 0
+                    eval = self.alpha_beta(depth - 1 - reduction, alpha, beta, True, ply + 1)
+
+                    # Reduced move looks interesting -> full-depth re-search
+                    if eval < beta:
+                        eval = self.alpha_beta(depth - 1, alpha, beta, True, ply + 1)
+
                 board.unmakeMove_sq(sq_from, sq_to)
 
                 if eval < min_eval:

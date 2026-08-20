@@ -96,7 +96,7 @@ def board_bottleneck_profiling(depth):
 
     stats = pstats.Stats(profiler)
     stats.sort_stats("cumtime")
-    stats.print_stats(30)
+    stats.print_stats(40)
 
     snapshotcomp(before, after)
     board.print_board()
@@ -131,6 +131,16 @@ def make_move_profiling():
         board.makeMove_sq(1, 18)
         board.makeMove_sq(45,62)
         board.makeMove_sq(18,1)
+    profiler.disable()
+    stats = pstats.Stats(profiler)
+    stats.sort_stats("cumtime")
+    stats.print_stats(30)
+
+def generate_profiling():
+    board = Board()
+    profiler.enable()
+    for _ in range(10000):
+        board.generate_legal_moves(True)
     profiler.disable()
     stats = pstats.Stats(profiler)
     stats.sort_stats("cumtime")

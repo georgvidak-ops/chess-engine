@@ -267,8 +267,15 @@ class Board:
         rays = ROOK_RAYS[sq] if dirs == STRAIGHT else BISHOP_RAYS[sq]
         full_rays = ROOK_RAYS if dirs == STRAIGHT else BISHOP_RAYS
 
-        occupied = own_bb | enemy_bb
+        occupied = self.occupied
         attacks = 0
+
+        if dirs == STRAIGHT:
+            rays = ROOK_RAYS[sq]
+            msb_dirs = (True, False, True, False)
+        else:
+            rays = BISHOP_RAYS[sq]
+            msb_dirs = (True, True, False, False)
 
         for i, ray in enumerate(rays):
             blockers = ray & occupied
@@ -277,13 +284,7 @@ class Board:
                 attacks |= ray
                 continue
 
-            # find nearest blocker in this direction.
-            use_msb = (
-                (dirs == STRAIGHT and i in (0, 2)) or
-                (dirs == DIAGONAL and i in (0, 1))
-            )
-
-            if use_msb:
+            if msb_dirs[i]:
                 blocker = blockers.bit_length() - 1 # msb
             else:
                 blocker = (blockers & -blockers).bit_length() - 1 # lsb
@@ -399,6 +400,8 @@ class Board:
             return ((target >> 7) & NOT_A_FILE) | ((target >> 9) & NOT_H_FILE)
 
     def knight_attackers(self, sq):
+        if sq == -1:
+            self.print_board()
         knight = 1 << sq
 
         attacks = 0
