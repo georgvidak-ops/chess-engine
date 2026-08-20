@@ -201,8 +201,9 @@ class Machine:
     def evaluate(self):
         return self.board.eval_score + self.castling_rights_penalty()
     
-    def quiescence(self, alpha, beta, maximizing):
-        in_check = self.board.is_king_attacked(maximizing)
+    def quiescence(self, alpha, beta, maximizing, in_check=None):
+        if in_check == None:
+            in_check = self.board.is_king_attacked(maximizing)
         stand_pat = self.evaluate()
 
         if not in_check:
@@ -238,11 +239,12 @@ class Machine:
             self.board.makeMove_sq(sq_from, sq_to)
 
             # checks if making the move leaves king exposed to be captured in opposing turn
-            if self.board.is_king_attacked(maximizing):
+            move_check = self.board.is_king_attacked(maximizing) # passes king_in_check after move to cut down the calls at the beginning
+            if move_check:
                 self.board.unmakeMove_sq(sq_from, sq_to)
                 continue
 
-            score = self.quiescence(alpha, beta, not maximizing)
+            score = self.quiescence(alpha, beta, not maximizing, move_check)
 
             self.board.unmakeMove_sq(sq_from, sq_to)
 
@@ -490,14 +492,11 @@ class Machine:
         best_move = None
         best_eval = -INF if board.white_to_move else INF
 
-        moves = board.generate_pseudo_moves(board.white_to_move)
+        moves = board.generate_legal_moves(board.white_to_move)
         self.root_ply = depth
         moves.sort(key = self.move_score, reverse = True)
         for sq_from, sq_to in moves:
             board.makeMove_sq(sq_from, sq_to)
-            if board.is_king_attacked(not board.white_to_move): #disregard non-legal moves
-                board.unmakeMove_sq(sq_from, sq_to)
-                continue
 
             eval = self.alpha_beta(depth - 1, -INF, INF, board.white_to_move, 0)
 

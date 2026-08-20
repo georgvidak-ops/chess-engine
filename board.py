@@ -10,8 +10,8 @@ NOT_AB_FILE = 0xfcfcfcfcfcfcfcfc
 NOT_GH_FILE = 0x3f3f3f3f3f3f3f3f
 
 # raycast arrays
-ROOK_RAYS = [[0, 0, 0, 0] for _ in range(64)] # N, S, E, W
-BISHOP_RAYS = [[0, 0, 0, 0] for _ in range(64)] # NE, NW, SE, SW
+ROOK_RAYS = [[0, 0, 0, 0] for _ in range(64)] # N, E, S, W
+BISHOP_RAYS = [[0, 0, 0, 0] for _ in range(64)] # NW, NE, SE, SW
 STRAIGHT = 0
 DIAGONAL = 1
 
@@ -70,35 +70,35 @@ class Board:
             rank = sq // 8
             file = sq % 8
 
-            # Rook: N, S, E, W
+            # Rook: N, E, S, W
             if rank > 0:
                 for r in range(rank - 1, -1, -1):
                     ROOK_RAYS[sq][0] |= 1 << (r * 8 + file)
 
-            if rank < 7:
-                for r in range(rank + 1, 8):
-                    ROOK_RAYS[sq][1] |= 1 << (r * 8 + file)
-
             if file < 7:
                 for f in range(file + 1, 8):
-                    ROOK_RAYS[sq][2] |= 1 << (rank * 8 + f)
+                    ROOK_RAYS[sq][1] |= 1 << (rank * 8 + f)
+
+            if rank < 7:
+                for r in range(rank + 1, 8):
+                    ROOK_RAYS[sq][2] |= 1 << (r * 8 + file)
 
             if file > 0:
                 for f in range(file - 1, -1, -1):
                     ROOK_RAYS[sq][3] |= 1 << (rank * 8 + f)
 
-            # Bishop: NE, NW, SE, SW
-            r, f = rank - 1, file + 1
-            while r >= 0 and f < 8:
-                BISHOP_RAYS[sq][0] |= 1 << (r * 8 + f)
-                r -= 1
-                f += 1
-
+            # Bishop: NW, NE, SE, SW
             r, f = rank - 1, file - 1
             while r >= 0 and f >= 0:
-                BISHOP_RAYS[sq][1] |= 1 << (r * 8 + f)
+                BISHOP_RAYS[sq][0] |= 1 << (r * 8 + f)
                 r -= 1
                 f -= 1
+
+            r, f = rank - 1, file + 1
+            while r >= 0 and f < 8:
+                BISHOP_RAYS[sq][1] |= 1 << (r * 8 + f)
+                r -= 1
+                f += 1
 
             r, f = rank + 1, file + 1
             while r < 8 and f < 8:
@@ -191,44 +191,38 @@ class Board:
     # BISHOP
     # -------------------------
 
-    def bishop_moves(self, sq, own, enemy, raycasts): # raycasts = True tells the programme to not count any object it hit whether its own or enemy piece
-        return self.raycast_attacks(sq, DIAGONAL, own, enemy, raycasts)
+    def bishop_moves(self, sq, enemy, raycasts): # raycasts = True tells the programme to not count any object it hit whether its own or enemy piece
+        return self.raycast_attacks(sq, DIAGONAL, enemy, raycasts)
 
     def BishopValidity(self, sq_from, sq_to, clr):
-        own = self.white if clr else self.black
         enemy = self.black if clr else self.white
 
-        moves = self.bishop_moves(sq_from, own, enemy, False)
+        moves = self.bishop_moves(sq_from, enemy, False)
         return bool(moves & (1 << sq_to))
     
     # -------------------------
     # ROOK
     # -------------------------
-    def rook_moves(self, sq, own, enemy, raycasts): # raycasts = True tells the programme to not count any object it hit whether its own or enemy piece
-        return self.raycast_attacks(sq, STRAIGHT, own, enemy, raycasts)
+    def rook_moves(self, sq, enemy, raycasts): # raycasts = True tells the programme to not count any object it hit whether its own or enemy piece
+        return self.raycast_attacks(sq, STRAIGHT, enemy, raycasts)
     
     def RookValidity(self, sq_from, sq_to, clr):
-        own = self.white if clr else self.black
         enemy = self.black if clr else self.white
 
-        moves = self.rook_moves(sq_from, own, enemy, False)
-
-        if not bool(moves & (1 << sq_to)): return False
-
-        return True
+        moves = self.rook_moves(sq_from, enemy, False)
+        return bool(moves & (1 << sq_to))
     
     # -------------------------
     # QUEEN
     # -------------------------
     
-    def queen_moves(self, sq, own, enemy, raycasts): # raycasts = True tells the programme to not count any object it hit whether its own or enemy piece
-        return self.rook_moves(sq, own, enemy, raycasts) | self.bishop_moves(sq, own, enemy, raycasts)
+    def queen_moves(self, sq, enemy, raycasts): # raycasts = True tells the programme to not count any object it hit whether its own or enemy piece
+        return self.rook_moves(sq, enemy, raycasts) | self.bishop_moves(sq, enemy, raycasts)
 
     def QueenValidity(self, sq_from, sq_to, clr):
-        own = self.white if clr else self.black
         enemy = self.black if clr else self.white
 
-        moves = self.queen_moves(sq_from, own, enemy, False)
+        moves = self.queen_moves(sq_from, enemy, False)
         return bool(moves & (1 << sq_to))
     
     # -------------------------
@@ -263,7 +257,7 @@ class Board:
     # ATTACK BITBOARDS
     # -------------------------
 
-    def raycast_attacks(self, sq, dirs, own_bb, enemy_bb, raycasts = False):
+    def raycast_attacks(self, sq, dirs, enemy_bb, raycasts = False):
         rays = ROOK_RAYS[sq] if dirs == STRAIGHT else BISHOP_RAYS[sq]
         full_rays = ROOK_RAYS if dirs == STRAIGHT else BISHOP_RAYS
 
@@ -272,10 +266,10 @@ class Board:
 
         if dirs == STRAIGHT:
             rays = ROOK_RAYS[sq]
-            msb_dirs = (True, False, True, False)
+            msb_dirs = (True, False, False, True) # N, E, S, W
         else:
             rays = BISHOP_RAYS[sq]
-            msb_dirs = (True, True, False, False)
+            msb_dirs = (True, True, False, False) # NW, NE, SE, SW
 
         for i, ray in enumerate(rays):
             blockers = ray & occupied
@@ -342,11 +336,11 @@ class Board:
         if from_sq != None:
             rooks = 1 << from_sq
 
-        own, enemy = (self.white, self.black) if clr else (self.black, self.white)
+        enemy = self.black if clr else self.white
         squares = self.extract_squares(rooks)
         attacks = 0
         for i in squares:
-            attacks |= self.rook_moves(i, own, enemy, True)
+            attacks |= self.rook_moves(i, enemy, True)
         return attacks
 
     def bishop_attacks(self, from_sq, clr):
@@ -354,11 +348,11 @@ class Board:
         if from_sq != None:
             bishops = 1<< from_sq
 
-        own, enemy = (self.white, self.black) if clr else (self.black, self.white)
+        enemy = self.black if clr else self.white
         squares = self.extract_squares(bishops)
         attacks = 0
         for i in squares:
-            attacks |= self.bishop_moves(i, own, enemy, True)
+            attacks |= self.bishop_moves(i, enemy, True)
         return attacks
     
     def queen_attacks(self, from_sq, clr):
@@ -366,11 +360,11 @@ class Board:
         if from_sq != None:
             queens = 1 << from_sq
 
-        own, enemy = (self.white, self.black) if clr else (self.black, self.white)
+        enemy = self.black if clr else self.white
         squares = self.extract_squares(queens)
         attacks = 0
         for i in squares:
-            attacks |= self.queen_moves(i, own, enemy, True)
+            attacks |= self.queen_moves(i, enemy, True)
         return attacks
     
     def king_attacker(self, clr):
@@ -419,7 +413,6 @@ class Board:
         return attacks & MASK_64
 
     def is_king_attacked(self, clr):
-        own = self.white if clr else self.black
         enemy = self.black if clr else self.white
         own_king = self.wk if clr else self.bk
         knights = self.bn if clr else self.wn
@@ -436,9 +429,9 @@ class Board:
             return True
         if self.pawn_attackers(king_sq, not clr) & pawns:
             return True
-        if self.rook_moves(king_sq, own, enemy, False) & (rooks | queens):
+        if self.rook_moves(king_sq, enemy, False) & (rooks | queens):
             return True
-        if self.bishop_moves(king_sq, own, enemy, False) & (bishops | queens):
+        if self.bishop_moves(king_sq, enemy, False) & (bishops | queens):
             return True
         return False
     
@@ -568,11 +561,11 @@ class Board:
                 elif piece == "wn" or piece == "bn":
                     moves = self.knight_attacks(from_sq, clr) & ~own
                 elif piece == "wb" or piece == "bb":
-                    moves = self.bishop_moves(from_sq, own, enemy, False)
+                    moves = self.bishop_moves(from_sq, enemy, False)
                 elif piece == "wr" or piece == "br":
-                    moves = self.rook_moves(from_sq, own, enemy, False)
+                    moves = self.rook_moves(from_sq, enemy, False)
                 elif piece == "wq" or piece == "bq":
-                    moves = self.queen_moves(from_sq, own, enemy, False)
+                    moves = self.queen_moves(from_sq, enemy, False)
                 else:  # king
                     moves = self.king_attacker(clr) & ~own
 
@@ -607,11 +600,11 @@ class Board:
                 elif piece[1] == "n":
                     moves = self.knight_attacks(from_sq, clr) & ~own
                 elif piece[1] == "b":
-                    moves = self.bishop_moves(from_sq, own, enemy, False)
+                    moves = self.bishop_moves(from_sq, enemy, False)
                 elif piece[1] == "r":
-                    moves = self.rook_moves(from_sq, own, enemy, False)
+                    moves = self.rook_moves(from_sq, enemy, False)
                 elif piece[1] == "q":
-                    moves = self.queen_moves(from_sq, own, enemy, False)
+                    moves = self.queen_moves(from_sq, enemy, False)
                 else:  # king
                     moves = self.king_attacker(clr) & ~own
                     
@@ -647,56 +640,51 @@ class Board:
         return legal_moves + self.legal_move_castling(clr)
 
     def generate_captures(self, clr):
-            legal_captures = []
-            own = self.white if clr else self.black
-            enemy = self.black if clr else self.white
-            captures = []
-    
-            pieces = ["wp","wn","wb","wr","wq","wk"] if clr else ["bp","bn","bb","br","bq","bk"]
-    
-            for piece in pieces:
-                bb = getattr(self, piece)
-    
-                while bb:
-                    from_bit = bb & -bb
-                    from_sq = from_bit.bit_length() - 1
-                    bb &= bb - 1  # remove LSB
-    
-                    # generate pseudo-legal targets for this square
-                    if piece[1] == "p":
-                        captures = self.pawn_attackers(from_sq, clr) & enemy
-                    elif piece[1] == "n":
-                        captures = self.knight_attacks(from_sq, clr) & enemy
-                    elif piece[1] == "b":
-                        captures = self.bishop_moves(from_sq, own, enemy, False) & enemy
-                    elif piece[1] == "r":
-                        captures = self.rook_moves(from_sq, own, enemy, False) & enemy
-                    elif piece[1] == "q":
-                        captures = self.queen_moves(from_sq, own, enemy, False) & enemy
-                    else:  # king
-                        captures = self.king_attacker(clr) & enemy
-                        
-    
-            # Had to repeat pseudo-legal generation because from_sq couldnt be passed as arguement without causing too much chaos
-    
-    
-                    # iterate targets
-                    while captures:
-                        to_bit = captures & -captures
-                        to_sq = to_bit.bit_length() - 1
-                        captures &= captures - 1
-    
-                        # make move
-                        self.makeMove_sq(from_sq, to_sq)
-    
-                        # legality check
-                        if not self.is_king_attacked(clr):
-                            legal_captures.append((from_sq, to_sq))
-    
-                        # undo move
-                        self.unmakeMove_sq(from_sq, to_sq)
-    
-            return legal_captures
+        legal_captures = []
+        enemy = self.black if clr else self.white
+        captures = []
+
+        pieces = ["wp","wn","wb","wr","wq","wk"] if clr else ["bp","bn","bb","br","bq","bk"]
+
+        for piece in pieces:
+            bb = getattr(self, piece)
+
+            while bb:
+                from_bit = bb & -bb
+                from_sq = from_bit.bit_length() - 1
+                bb &= bb - 1  # remove LSB
+
+                # generate pseudo-legal targets for this square
+                if piece[1] == "p":
+                    captures = self.pawn_attackers(from_sq, clr) & enemy
+                elif piece[1] == "n":
+                    captures = self.knight_attacks(from_sq, clr) & enemy
+                elif piece[1] == "b":
+                    captures = self.bishop_moves(from_sq, enemy, False) & enemy
+                elif piece[1] == "r":
+                    captures = self.rook_moves(from_sq, enemy, False) & enemy
+                elif piece[1] == "q":
+                    captures = self.queen_moves(from_sq, enemy, False) & enemy
+                else:  # king
+                    captures = self.king_attacker(clr) & enemy    
+
+                # iterate targets
+                while captures:
+                    to_bit = captures & -captures
+                    to_sq = to_bit.bit_length() - 1
+                    captures &= captures - 1
+
+                    # make move
+                    self.makeMove_sq(from_sq, to_sq)
+
+                    # legality check
+                    if not self.is_king_attacked(clr):
+                        legal_captures.append((from_sq, to_sq))
+
+                    # undo move
+                    self.unmakeMove_sq(from_sq, to_sq)
+
+        return legal_captures
 
 
     # -------------------------

@@ -146,5 +146,15 @@ def generate_profiling():
     stats.sort_stats("cumtime")
     stats.print_stats(30)
 
-speed_benchmark(6) # function searches the first move at a given depth and is used as a benchmark for speed after each update
+def king_in_check_profiler():
+    board = Board()
+    profiler.enable()
+    for _ in range(10000):
+        board.is_king_attacked(True)
+    profiler.disable()
+    stats = pstats.Stats(profiler)
+    stats.sort_stats("cumtime")
+    stats.print_stats(30)
+
+speed_benchmark(8) # function searches the first move at a given depth and is used as a benchmark for speed after each update
 #board_bottleneck_profiling(6)
