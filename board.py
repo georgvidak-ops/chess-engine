@@ -1093,6 +1093,25 @@ class Board:
 
         return True
 
+    def make_null_move(self):
+        self.white_to_move = not self.white_to_move
+        self.hash ^= self.zobrist.side_key
+
+        if self.en_passant_square:
+            self.hash ^= self.zobrist.ep_keys[self.en_passant_square % 8]
+            ep = self.en_passant_square
+            self.en_passant_square = 0
+            return ep
+        return False
+
+    def unmake_null_move(self, ep_sq):
+        self.hash ^= self.zobrist.side_key
+        self.white_to_move = not self.white_to_move
+
+        if ep_sq:
+            self.hash ^= self.zobrist.ep_keys[ep_sq % 8]
+            self.en_passant_square = ep_sq
+
     def en_passant_capture_removal(self, sq_to, clr):
         direction = 8 if clr else -8
 

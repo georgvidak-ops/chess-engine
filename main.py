@@ -62,7 +62,7 @@ def main():
 
         else:
             board.print_board()
-            move = engine.find_best_move(6)
+            move = engine.find_best_move(8)
             if move == None: break
             sq_from, sq_to = move
             print(engine.evaluate())

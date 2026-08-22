@@ -45,7 +45,7 @@ class Machine:
         "k": 0
     }
 
-    SEE_values = {
+    SEE_values = { # SEE is not implemented yet, but was supposed to be when I added this table
     "P": 100,
     "N": 320,
     "B": 330,
@@ -261,7 +261,7 @@ class Machine:
                 
         return alpha if maximizing else beta
     
-    def alpha_beta(self, depth, alpha, beta, maximizing, ply):
+    def alpha_beta(self, depth, alpha, beta, maximizing, ply, in_null_move=False):
         board = self.board
 
         self.nodes += 1
@@ -271,7 +271,10 @@ class Machine:
 
         key = board.hash
 
-        entry = self.tt.get(key)
+        if not in_null_move:
+            entry = self.tt.get(key)
+        else:
+            entry = None
 
         stored_move = None
 
@@ -294,8 +297,32 @@ class Machine:
 
         if depth <= 0:
             return self.quiescence(alpha, beta, maximizing)
+        
+        clr = board.white_to_move
 
-        clr = maximizing
+        # null move
+        
+        R = 2 if depth < 6 else 3 # null move depth reduction
+        T = 3 # null move depth threshold
+        pieceless = ((board.wp | board.bp | board.wk | board.bk) == board.occupied)
+        # pieceless variable makes sure null move pruning doesnt occur in king pawn endgames
+        # where tactical moves could be missed and zugzwang could yield false results when pruning
+
+        if depth >= T and not board.is_king_attacked(clr) and not in_null_move and not pieceless:
+            ep = board.make_null_move() # a way to pass en passant square into unmake_null_move
+            if maximizing:
+                score = self.alpha_beta(depth - 1 - R, beta - 1, beta, False, ply + 1, True)
+                board.unmake_null_move(ep)
+                if score >= beta:
+                    return beta
+            else:
+                score = self.alpha_beta(depth - 1 - R, alpha, alpha + 1, True, ply + 1, True)
+                board.unmake_null_move(ep)
+                if score <= alpha:
+                    return alpha
+        
+        # move generation
+
         moves = board.generate_pseudo_moves(clr)
         self.root_ply = ply
         moves.sort(key = self.move_score, reverse = True)

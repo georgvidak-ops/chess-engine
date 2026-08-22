@@ -156,5 +156,9 @@ def king_in_check_profiler():
     stats.sort_stats("cumtime")
     stats.print_stats(30)
 
+# -------------------------
+# Test Calls
+# -------------------------
+
 speed_benchmark(8) # function searches the first move at a given depth and is used as a benchmark for speed after each update
-#board_bottleneck_profiling(6)
+#board_bottleneck_profiling(8)
