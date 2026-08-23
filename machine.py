@@ -222,10 +222,11 @@ class Machine:
 
         else:
             # search evasions when in check to avoid illegal moves
-            moves = self.board.generate_legal_moves(maximizing)
+            moves = self.board.generate_legal_moves(maximizing, in_check=True)
 
         for sq_from, sq_to in moves:
 
+            piece = self.board.get_piece(sq_from)
             captured_piece = self.board.get_piece(sq_to)
             captured_value = abs(self.piece_values[captured_piece]) if captured_piece != "." else 0
 
@@ -233,13 +234,13 @@ class Machine:
                 if stand_pat + captured_value + Q_DELTA_MARGIN < alpha:
                     continue
             else:
-                if stand_pat + captured_value + Q_DELTA_MARGIN > beta:
+                if stand_pat - captured_value - Q_DELTA_MARGIN > beta:
                     continue
 
             self.board.makeMove_sq(sq_from, sq_to)
 
             # checks if making the move leaves king exposed to be captured in opposing turn
-            if self.board.is_king_attacked(maximizing):
+            if self.board.is_discovered_check(sq_from, sq_to, not maximizing, piece):
                 self.board.unmakeMove_sq(sq_from, sq_to)
                 continue
 
@@ -326,7 +327,7 @@ class Machine:
         
         # move generation
 
-        moves = board.generate_pseudo_moves(clr)
+        moves = board.generate_pseudo_moves(clr) if not king_in_check else board.generate_legal_moves(clr, in_check= True)
         self.root_ply = ply
         moves.sort(key = self.move_score, reverse = True)
 
@@ -345,11 +346,12 @@ class Machine:
             best_move = None
             legal_index = 0
             for _, (sq_from, sq_to) in enumerate(moves):
+                piece = board.get_piece(sq_from)
                 captured_piece = board.get_piece(sq_to)
 
                 board.makeMove_sq(sq_from, sq_to)
 
-                if board.is_king_attacked(clr):
+                if board.is_discovered_check(sq_from, sq_to, not clr, piece):
                     board.unmakeMove_sq(sq_from, sq_to)
                     continue
 
@@ -420,11 +422,12 @@ class Machine:
             best_move = None
             legal_index = 0
             for _, (sq_from, sq_to) in enumerate(moves):
+                piece = board.get_piece(sq_from)
                 captured_piece = board.get_piece(sq_to)
 
                 board.makeMove_sq(sq_from, sq_to)
                 
-                if board.is_king_attacked(clr):
+                if board.is_discovered_check(sq_from, sq_to, not clr, piece):
                     board.unmakeMove_sq(sq_from, sq_to)
                     continue
 
@@ -472,7 +475,7 @@ class Machine:
 
             # no legal moves
             if not found_legal:
-                if board.is_king_attacked(clr):
+                if king_in_check:
                     eval = (-INF + ply) if maximizing else (INF - ply)
                 else:
                     eval = 0 # stalemate

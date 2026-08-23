@@ -567,6 +567,9 @@ class Board:
 
     def is_discovered_check(self, sq_from, sq_to, clr, piece):
         enemy_king_sq = self.bk.bit_length() - 1 if clr else self.wk.bit_length() - 1
+
+        if piece.upper() == "K":
+            return self.is_king_attacked(not clr)
             
         # if sq_to stays on the same ray the moving piece still blocks the check
         if SQUARES_ALIGNED[sq_to][enemy_king_sq] and (RAY_LINE[sq_from][enemy_king_sq] == RAY_LINE[sq_to][enemy_king_sq]):
@@ -751,7 +754,7 @@ class Board:
 
         return pseudo_moves + self.pseudo_move_castling(clr)
     
-    def generate_legal_moves(self, clr, capturesOnly = False):
+    def generate_legal_moves(self, clr, in_check=False):
         legal_moves = []
         own = self.white if clr else self.black
         enemy = self.black if clr else self.white
@@ -790,25 +793,21 @@ class Board:
                     to_sq = to_bit.bit_length() - 1
                     moves &= moves - 1
 
-                    is_quiet = not (to_bit & enemy)
-                    is_ep = False
-                    if piece == "wp" or "bp" and to_sq == self.en_passant_square:
-                        is_ep == True
-
-                    if (is_quiet or is_ep) and capturesOnly:
-                        continue
-
                     # make move
                     self.makeMove_sq(from_sq, to_sq)
 
                     # legality check
-                    if not self.is_king_attacked(clr):
-                        legal_moves.append((from_sq, to_sq))
+                    if in_check:
+                        if not self.is_king_attacked(clr):
+                            legal_moves.append((from_sq, to_sq))
+                    else:
+                        piece_moved = self.get_piece(to_sq)
+                        if not self.is_discovered_check(from_sq, to_sq, clr, piece_moved):
+                            legal_moves.append((from_sq, to_sq))
 
                     # undo move
                     self.unmakeMove_sq(from_sq, to_sq)
 
-        if capturesOnly: return legal_moves
         return legal_moves + self.legal_move_castling(clr)
 
     def generate_captures(self, clr):
