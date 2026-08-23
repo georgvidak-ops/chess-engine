@@ -21,10 +21,20 @@ CAPTURE = 1
 PROMOTION = 2
 # en passant and castling are both variants of movement and capture types
 
+# 64 x 64 array that returns True if 2 squares share a raycast (straight or diagonal)
+SQUARES_ALIGNED = [[0] * 64 for _ in range(64)]
+# 64 x 64 array that returns the bitboard of the ray between two squares if they share one
+RAY_BETWEEN = [[0] * 64 for _ in range(64)]
+# 64 x 64 array that returns the "infinite" ray that goes through two squares (if they fall on a ray)
+RAY_LINE = [[0] * 64 for _ in range(64)]
+
 class Board:
     def __init__(self):
         self.init_bitboards()
         self.init_rays()
+        self.init_alignment_table()
+        self.init_between_rays()
+        self.init_ray_line()
         self.white_to_move = True
         self.castling_rights = 0b1111 #each bit represents a castling right 1)White short, 2)White long, 3)Black short, 4)Black long
         self.en_passant_square = 0
@@ -111,6 +121,83 @@ class Board:
                 BISHOP_RAYS[sq][3] |= 1 << (r * 8 + f)
                 r += 1
                 f -= 1
+
+    def init_alignment_table(self): # first 64 
+        for f in range(64): # f = sq_from
+            for t in range(64): # t = sq_to
+                if f // 8 == t // 8: # same rank
+                    SQUARES_ALIGNED[f][t] = True
+                elif f % 8 == t % 8: # same file
+                    SQUARES_ALIGNED[f][t] = True 
+                elif abs(f % 8 - t % 8) == abs(f // 8 - t // 8): # share a diagonal
+                    SQUARES_ALIGNED[f][t] = True
+                elif f == t: # same square
+                    SQUARES_ALIGNED[f][t] = True
+                else:
+                    SQUARES_ALIGNED[f][t] = False
+
+    def init_between_rays(self):
+        for f in range(64): # f = sq_from
+            for t in range(64): # t = sq_to
+                if SQUARES_ALIGNED[f][t]:
+                    # Walk square-by-square from sq_from toward sq_to
+                    step_r = (t // 8 - f // 8) # step rank
+                    step_r = 0 if step_r == 0 else (1 if step_r > 0 else -1)
+                    
+                    step_f = (t % 8 - f % 8) # step file
+                    step_f = 0 if step_f == 0 else (1 if step_f > 0 else -1)
+                    
+                    curr_r, curr_f = f // 8 + step_r, f % 8 + step_f
+                    mask = 0
+                    
+                    while (curr_r, curr_f) != (t // 8, t % 8):
+                        mask |= (1 << (curr_r * 8 + curr_f))
+                        curr_r += step_r
+                        curr_f += step_f
+                        
+                    RAY_BETWEEN[f][t] = mask
+                else:
+                    continue
+
+    def init_ray_line(self):
+        for sq_from in range(64):
+            f_rank, f_file = sq_from // 8, sq_from % 8
+            
+            for sq_to in range(64):
+                if sq_from == sq_to:
+                    continue
+                    
+                t_rank, t_file = sq_to // 8, sq_to % 8
+                
+                # step direction (-1, 0, or 1) for rank and file
+                step_r = t_rank - f_rank
+                step_r = 0 if step_r == 0 else (1 if step_r > 0 else -1)
+                
+                step_f = t_file - f_file
+                step_f = 0 if step_f == 0 else (1 if step_f > 0 else -1)
+                
+                # only generate lines if squares are aligned
+                if not SQUARES_ALIGNED[sq_from][sq_to]:
+                    continue
+                
+                line_mask = 0
+                
+                # walk all the way in the forward direction to the edge of the board
+                r, f = f_rank, f_file
+                while 0 <= r < 8 and 0 <= f < 8:
+                    line_mask |= (1 << (r * 8 + f))
+                    r += step_r
+                    f += step_f
+                    
+                # walk all the way in the backward direction to the opposite edge
+                r, f = f_rank - step_r, f_file - step_f
+                while 0 <= r < 8 and 0 <= f < 8:
+                    line_mask |= (1 << (r * 8 + f))
+                    r -= step_r
+                    f -= step_f
+                    
+                RAY_LINE[sq_from][sq_to] = line_mask
+                
 
     # -------------------------
     # SQUARE HELPERS
@@ -434,6 +521,91 @@ class Board:
         if self.bishop_moves(king_sq, enemy, False) & (bishops | queens):
             return True
         return False
+
+    def gives_check(self, clr, sq_from, sq_to):
+        enemy = self.black if clr else self.white
+
+        king_bit = self.bk if clr else self.wk
+        king_sq = king_bit.bit_length() - 1
+
+        piece = self.get_piece(sq_to)
+
+        direct_attacks = 0
+
+        if piece.upper() == 'P':
+            direct_attacks = self.pawn_attackers(sq_to, clr)
+        elif piece.upper() == 'N':
+            direct_attacks = self.knight_attackers(sq_to)
+        elif piece.upper() == 'B':
+            direct_attacks = self.bishop_moves(sq_to, enemy, False)
+        elif piece.upper() == 'R':
+            direct_attacks = self.rook_moves(sq_to, enemy, False)
+        elif piece.upper() == 'Q':
+            direct_attacks = self.queen_moves(sq_to, enemy, False)
+        elif piece.upper() == 'K':
+            if abs(sq_from - sq_to) == 2: # in check after castle case
+                if sq_to == 62: # white short castle
+                    direct_attacks = 0x1F00000000000000
+                elif sq_to == 58: # white long castle
+                    direct_attacks = 0xF000000000000000
+                elif sq_to == 6: # black short castle
+                    direct_attacks = 0x000000000000001F
+                elif sq_to == 2: # black long castle
+                    direct_attacks = 0x00000000000000F0
+                else:
+                    direct_attacks = 0
+        else:
+            direct_attacks = 0
+
+        if direct_attacks & king_bit:
+            return True # direct hit
+
+        if SQUARES_ALIGNED[sq_from][king_sq]: # discovered check possible
+            return self.is_discovered_check(sq_from, sq_to, clr, piece)
+
+        return False
+
+    def is_discovered_check(self, sq_from, sq_to, clr, piece):
+        enemy_king_sq = self.bk.bit_length() - 1 if clr else self.wk.bit_length() - 1
+            
+        # if sq_to stays on the same ray the moving piece still blocks the check
+        if SQUARES_ALIGNED[sq_to][enemy_king_sq] and (RAY_LINE[sq_from][enemy_king_sq] == RAY_LINE[sq_to][enemy_king_sq]):
+            return False
+
+        # find own sliders behind sq_from along the king ray
+        full_ray = RAY_LINE[sq_from][enemy_king_sq]
+        
+        own_sliders = (self.wq | self.wr | self.wb) if clr else (self.bq | self.br | self.bb)
+        potential_attackers = own_sliders & full_ray
+        
+        if not potential_attackers:
+            return False
+
+        # verify sq_from was the only piece between a slider and the king
+        for attacker_sq in self.extract_squares(potential_attackers):
+            # make sure slider is behind sq_from relative to the king
+            if (1 << sq_from) & RAY_BETWEEN[attacker_sq][enemy_king_sq]:
+                # check if other piece blocks the path
+                between_mask = RAY_BETWEEN[attacker_sq][enemy_king_sq] & ~(1 << sq_from)
+                # handle en passant captured pawn removal from ray
+                if piece.upper() == 'P' and sq_to == self.en_passant_square:
+                    ep_pawn_sq = sq_to - 8 if clr else sq_to + 8
+                    between_mask &= ~(1 << ep_pawn_sq)
+                if (between_mask & self.occupied) == 0:
+                    # check if piece type matches ray direction (Diagonal or Straight)
+                    if self.valid_slider_for_ray(attacker_sq, enemy_king_sq):
+                        return True
+
+        return False
+
+    def valid_slider_for_ray(self, sq, king_sq):
+        if sq % 8 == king_sq % 8 or sq // 8 == king_sq // 8:
+            # straight slider
+            return (self.get_piece(sq).upper() in ("R", "Q"))
+        else:
+            # diagonal slider
+            return (self.get_piece(sq).upper() in ("B", "Q"))
+
     
     # -------------------------
     # LEGAL MOVES
