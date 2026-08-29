@@ -28,6 +28,12 @@ RAY_BETWEEN = [[0] * 64 for _ in range(64)]
 # 64 x 64 array that returns the "infinite" ray that goes through two squares (if they fall on a ray)
 RAY_LINE = [[0] * 64 for _ in range(64)]
 
+# mapping that returns wp for P etc.
+GLOBAL_MAPPING = {
+    "P":"wp","N":"wn","B":"wb","R":"wr","Q":"wq","K":"wk",
+    "p":"bp","n":"bn","b":"bb","r":"br","q":"bq","k":"bk"
+}
+
 class Board:
     def __init__(self):
         self.init_bitboards()
@@ -1004,10 +1010,7 @@ class Board:
 
     def makeMove_sq(self, sq_from, sq_to, castleLegalityChecking=False):
         piece = self.get_piece(sq_from)
-        mapping = {
-            "P":"wp","N":"wn","B":"wb","R":"wr","Q":"wq","K":"wk",
-            "p":"bp","n":"bn","b":"bb","r":"br","q":"bq","k":"bk"
-        }
+
         old_en_passant_square = 0
         old_eval = self.eval_score
 
@@ -1022,10 +1025,10 @@ class Board:
             to_bit = 1 << sq_to_rook
             from_bit = 1 << sq_from_rook
             # moving rook
-            bb = getattr(self, mapping[r_piece])
+            bb = getattr(self, GLOBAL_MAPPING[r_piece])
             bb &= ~from_bit & MASK_64
             bb |= to_bit
-            setattr(self, mapping[r_piece], bb)
+            setattr(self, GLOBAL_MAPPING[r_piece], bb)
             # shift eval
             self.eval_score += self.engine.shift_eval(
                 self.white_to_move, # clr
@@ -1111,10 +1114,10 @@ class Board:
         self.hash ^= self.zobrist.piece_keys[piece][sq_from]
         self.hash ^= self.zobrist.piece_keys[piece][sq_to]
 
-        bb = getattr(self, mapping[piece])
+        bb = getattr(self, GLOBAL_MAPPING[piece])
         bb &= ~from_bit & MASK_64
         bb |= to_bit
-        setattr(self, mapping[piece], bb)
+        setattr(self, GLOBAL_MAPPING[piece], bb)
 
         # shift eval
         self.eval_score += self.engine.shift_eval(
@@ -1169,10 +1172,7 @@ class Board:
         moved_piece, old_en_passant_square, old_castling_rights, promotion_happened, old_white_to_move_after, old_eval = (0,0,0,0,0,0)
         captured_piece = "."
         was_en_passant = False
-        mapping = {
-            "P":"wp","N":"wn","B":"wb","R":"wr","Q":"wq","K":"wk",
-            "p":"bp","n":"bn","b":"bb","r":"br","q":"bq","k":"bk"
-        }
+
         # restore saved move state
         (
             moved_piece,
@@ -1196,10 +1196,10 @@ class Board:
             to_bit = 1 << sq_to_rook
             from_bit = 1 << sq_from_rook
             # moving rook
-            bb = getattr(self, mapping[r_piece])
+            bb = getattr(self, GLOBAL_MAPPING[r_piece])
             bb &= ~from_bit & MASK_64
             bb |= to_bit
-            setattr(self, mapping[r_piece], bb)
+            setattr(self, GLOBAL_MAPPING[r_piece], bb)
 
             self.hash ^= self.zobrist.piece_keys[r_piece][sq_from_rook]
             self.hash ^= self.zobrist.piece_keys[r_piece][sq_to_rook]
@@ -1236,10 +1236,10 @@ class Board:
             self.promotion(sq_to, False)
 
         # move piece back
-        bb = getattr(self, mapping[moved_piece])
+        bb = getattr(self, GLOBAL_MAPPING[moved_piece])
         bb &= ~to_bit & MASK_64
         bb |= from_bit
-        setattr(self, mapping[moved_piece], bb)
+        setattr(self, GLOBAL_MAPPING[moved_piece], bb)
 
         # restore captured piece
         if captured_piece != ".":
