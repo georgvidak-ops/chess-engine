@@ -1,5 +1,5 @@
-from board import Board
-from machine import Machine
+from board_package import Board
+from engine import Engine
 import cProfile
 import pstats
 
@@ -84,12 +84,12 @@ def snapshotcomp(before, after):
 
 def board_bottleneck_profiling(depth):
     board = Board()
-    machine = Machine(board)
+    engine= Engine(board)
 
     before = snapshot(board)
     profiler.enable()
 
-    machine.find_best_move(depth)
+    engine.find_best_move(depth)
 
     profiler.disable()
     after = snapshot(board)
@@ -103,11 +103,11 @@ def board_bottleneck_profiling(depth):
 
 def speed_benchmark(depth):
     board = Board()
-    machine = Machine(board)
+    engine = Engine(board)
 
     before = snapshot(board)
 
-    machine.find_best_move(depth)
+    engine.find_best_move(depth)
 
     after = snapshot(board)
 

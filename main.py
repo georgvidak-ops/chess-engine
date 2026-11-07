@@ -1,9 +1,10 @@
-from board import Board
-from machine import Machine
+from board_package import Board
+from engine import Engine
+from engine.evaluation import evaluate
 
 def main():
     board = Board()
-    engine = Machine(board)
+    engine = Engine(board)
 
     #print(board.perft(1, True))   # 20
     #print(board.perft(2, True))   # 400
@@ -52,6 +53,7 @@ def main():
             sq_from, sq_to = board.parse(move)
 
             if board.checkValidity_sq(sq_from, sq_to):
+                board.principal_variation.append((sq_from, sq_to))
                 board.makeMove_sq(sq_from, sq_to)
                 if avoid_check(sq_from, sq_to, not board.white_to_move):
                     continue
@@ -62,10 +64,10 @@ def main():
 
         else:
             board.print_board()
-            move = engine.find_best_move(8)
+            move = engine.find_best_move(6)
             if move == None: break
             sq_from, sq_to = move
-            print(engine.evaluate())
+            print(evaluate(board))
             board.makeMove_sq(sq_from, sq_to)
 
 
