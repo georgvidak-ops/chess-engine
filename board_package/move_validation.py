@@ -87,16 +87,16 @@ def check_validity_sq(board, sq_from, sq_to):
     if clr != board.white_to_move:
         return False
     if piece.lower() == "p":
-        return pawn_validity(sq_from, sq_to, clr)
+        return pawn_validity(board, sq_from, sq_to, clr)
     if piece.lower() == "n":
-        return knight_validity(sq_from, sq_to, clr)
+        return knight_validity(board, sq_from, sq_to, clr)
     if piece.lower() == "b":
-        return bishop_validity(sq_from, sq_to, clr)
+        return bishop_validity(board, sq_from, sq_to, clr)
     if piece.lower() == "r":
-        return rook_validity(sq_from, sq_to, clr)
+        return rook_validity(board, sq_from, sq_to, clr)
     if piece.lower() == "q":
-        return queen_validity(sq_from, sq_to, clr)
+        return queen_validity(board, sq_from, sq_to, clr)
     if piece.lower() == "k":
-        return king_validity(sq_from, sq_to, clr)
+        return king_validity(board, sq_from, sq_to, clr)
 
     return False

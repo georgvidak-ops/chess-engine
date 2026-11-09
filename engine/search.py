@@ -39,17 +39,14 @@ class Engine:
     def __init__(self, board):
         self.board = board
         self.nodes = 0
-        self.qnodes = 0
         self.root_ply = 0
         self.move_ordering = MoveOrdering()
         self.tt = TranspositionTable()
     
-    def quiescence(self, alpha, beta, maximizing, in_check=None, qply=0):
+    def quiescence(self, alpha, beta, maximizing, in_check=None):
         if in_check == None:
             in_check = is_king_attacked(self.board, maximizing)
         stand_pat = evaluate(self.board)
-
-        self.qnodes += 1
 
         if not in_check:
             if maximizing:
@@ -91,7 +88,7 @@ class Engine:
 
             gives_check_var = gives_check(self.board, maximizing, sq_from, sq_to)
 
-            score = self.quiescence(alpha, beta, not maximizing, gives_check_var, qply + 1)
+            score = self.quiescence(alpha, beta, not maximizing, gives_check_var)
 
             unmakeMove_sq(self.board, sq_from, sq_to)
 
@@ -343,7 +340,6 @@ class Engine:
         start_time = time.perf_counter()
 
         for depth in range(1, max_depth + 1):
-            print("Entering depth: ", depth)
             move, eval = self.root_search(depth)
 
             best_move = move
@@ -361,14 +357,15 @@ class Engine:
 
 
         elapsed = time.perf_counter() - start_time
-        print("Move:", f"{best_move} calculated in: ", f"{elapsed:.3f} seconds")
+        print("Best move:", f"{best_move} calculated in: ", f"{elapsed:.3f} seconds")
         print("Nodes: ", self.nodes)
         nps = self.nodes / elapsed
-        print(f"NPS: {nps:,.0f}")
+        print(f"Nodes/Second: {nps:,.0f}")
 
         self.board.principal_variation.append(best_move)
-        print(self.board.principal_variation)
-
+        print("Principal Variation: ")
+        for move in self.board.principal_variation:
+            print(self.board.reverse_parse(move[0], move[1]), end=" ")
         return best_move
         
     def root_search(self, depth):

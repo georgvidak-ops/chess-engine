@@ -225,6 +225,12 @@ class Board:
 
         return from_sq, to_sq
 
+    def reverse_parse(self, from_sq, to_sq):
+        f_rank, f_file = divmod(from_sq, 8)
+        t_rank, t_file = divmod(to_sq, 8)
+
+        return f"{chr(f_file + ord('a'))}{8 - f_rank}{chr(t_file + ord('a'))}{8 - t_rank}"
+
     def translate(self, str):
         if str == ".": return str
 
